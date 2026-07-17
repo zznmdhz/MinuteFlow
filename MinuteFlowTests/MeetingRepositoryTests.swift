@@ -11,8 +11,8 @@ final class MeetingRepositoryTests: XCTestCase {
         let repository = LocalMeetingRepository(rootDirectory: root)
         var session = try repository.createSession(title: "录音测试", sourceSelection: .both)
 
-        XCTAssertEqual(session.systemAudioURL?.lastPathComponent, "system.m4a")
-        XCTAssertEqual(session.microphoneAudioURL?.lastPathComponent, "microphone.m4a")
+        XCTAssertTrue(session.systemAudioURL?.lastPathComponent.hasSuffix("_录音测试_系统声.m4a") == true)
+        XCTAssertTrue(session.microphoneAudioURL?.lastPathComponent.hasSuffix("_录音测试_麦克风.m4a") == true)
         XCTAssertNotEqual(session.systemAudioURL, session.microphoneAudioURL)
 
         session.recordingStatus = .completed
@@ -44,4 +44,3 @@ final class MeetingRepositoryTests: XCTestCase {
         XCTAssertTrue(try repository.loadRecentSessions().isEmpty)
     }
 }
-

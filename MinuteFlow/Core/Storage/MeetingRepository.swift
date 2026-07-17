@@ -55,11 +55,13 @@ struct LocalMeetingRepository: MeetingRepository {
             updatedAt: now
         )
 
+        let filePrefix = "\(Self.fileDateFormatter.string(from: now))_\(Self.safeFileName(title))"
+
         if sourceSelection.systemAudioEnabled {
-            session.systemAudioURL = audioDirectory.appending(path: "system.m4a")
+            session.systemAudioURL = audioDirectory.appending(path: "\(filePrefix)_系统声.m4a")
         }
         if sourceSelection.microphoneEnabled {
-            session.microphoneAudioURL = audioDirectory.appending(path: "microphone.m4a")
+            session.microphoneAudioURL = audioDirectory.appending(path: "\(filePrefix)_麦克风.m4a")
         }
         try save(session)
         return session
@@ -102,7 +104,7 @@ struct LocalMeetingRepository: MeetingRepository {
         try data.write(to: url, options: .atomic)
 
         let markdown = segments.map { segment in
-            "### \(Self.timestamp(segment.startTime)) · \(segment.source.title)\n\n\(segment.text)"
+            "### \(Self.timestamp(segment.startTime)) · \(segment.source.title)\n\n\(segment.normalizedText ?? segment.text)"
         }.joined(separator: "\n\n")
         try markdown.write(
             to: directory.appending(path: "transcript.md"),
@@ -142,4 +144,19 @@ struct LocalMeetingRepository: MeetingRepository {
         let seconds = max(0, Int(interval))
         return String(format: "%02d:%02d:%02d", seconds / 3_600, (seconds % 3_600) / 60, seconds % 60)
     }
+
+    private static func safeFileName(_ value: String) -> String {
+        let invalid = CharacterSet(charactersIn: "/:\\?%*|\"<>")
+        let components = value.components(separatedBy: invalid)
+        let result = components.joined(separator: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return String((result.isEmpty ? "未命名会议" : result).prefix(80))
+    }
+
+    private static let fileDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "yyyy-MM-dd_HHmm"
+        return formatter
+    }()
 }

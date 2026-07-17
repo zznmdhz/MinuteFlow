@@ -24,6 +24,22 @@ enum PermissionKind: String, Sendable {
     }
 }
 
+enum PermissionAuthorizationState: String, Sendable {
+    case authorized
+    case notDetermined
+    case denied
+    case restricted
+
+    var title: String {
+        switch self {
+        case .authorized: "已授权"
+        case .notDetermined: "尚未请求"
+        case .denied: "未授权"
+        case .restricted: "受系统限制"
+        }
+    }
+}
+
 struct PermissionIssue: Identifiable, Equatable, Sendable {
     let kind: PermissionKind
     let detail: String
@@ -34,10 +50,26 @@ struct PermissionIssue: Identifiable, Equatable, Sendable {
 
 protocol PermissionManaging: AnyObject, Sendable {
     func requestPermission(for kind: PermissionKind) async -> Bool
+    func currentStatus(for kind: PermissionKind) -> PermissionAuthorizationState
     @MainActor func openSettings(for kind: PermissionKind)
 }
 
 final class PermissionManager: PermissionManaging, @unchecked Sendable {
+    func currentStatus(for kind: PermissionKind) -> PermissionAuthorizationState {
+        switch kind {
+        case .microphone:
+            switch AVCaptureDevice.authorizationStatus(for: .audio) {
+            case .authorized: .authorized
+            case .notDetermined: .notDetermined
+            case .denied: .denied
+            case .restricted: .restricted
+            @unknown default: .denied
+            }
+        case .systemAudio:
+            CGPreflightScreenCaptureAccess() ? .authorized : .denied
+        }
+    }
+
     func requestPermission(for kind: PermissionKind) async -> Bool {
         switch kind {
         case .microphone:

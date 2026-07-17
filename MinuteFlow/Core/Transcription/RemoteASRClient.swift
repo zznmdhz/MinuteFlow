@@ -1,7 +1,7 @@
 import Foundation
 
 struct ASRConfiguration: Sendable {
-    let provider: STTProviderKind
+    let transport: ASRTransport
     let endpoint: URL
     let model: String
     let apiKey: String
@@ -26,13 +26,11 @@ enum RemoteModelError: LocalizedError, Sendable {
 
 struct RemoteASRClient: Sendable {
     func transcribe(wavURL: URL, configuration: ASRConfiguration) async throws -> String {
-        switch configuration.provider {
-        case .xiaomiMiMo:
+        switch configuration.transport {
+        case .miMoChatAudio:
             return try await transcribeWithMiMo(wavURL: wavURL, configuration: configuration)
-        case .zhipuGLM, .customOpenAICompatible:
+        case .openAIAudioTranscription:
             return try await transcribeMultipart(wavURL: wavURL, configuration: configuration)
-        case .disabled:
-            throw RemoteModelError.invalidConfiguration
         }
     }
 
@@ -60,7 +58,7 @@ struct RemoteASRClient: Sendable {
         var request = URLRequest(url: configuration.endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(configuration.apiKey)", forHTTPHeaderField: "Authorization")
+        APIRequestAuthentication.apply(apiKey: configuration.apiKey, endpoint: configuration.endpoint, to: &request)
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
         return try await perform(request)
     }
@@ -73,7 +71,7 @@ struct RemoteASRClient: Sendable {
         var body = Data()
         body.appendMultipart(name: "model", value: configuration.model, boundary: boundary)
         body.appendMultipart(name: "stream", value: "false", boundary: boundary)
-        if configuration.provider == .customOpenAICompatible,
+        if configuration.transport == .openAIAudioTranscription,
            configuration.language != "auto" {
             body.appendMultipart(
                 name: "language",
@@ -93,7 +91,7 @@ struct RemoteASRClient: Sendable {
         var request = URLRequest(url: configuration.endpoint)
         request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(configuration.apiKey)", forHTTPHeaderField: "Authorization")
+        APIRequestAuthentication.apply(apiKey: configuration.apiKey, endpoint: configuration.endpoint, to: &request)
         request.httpBody = body
         return try await perform(request)
     }
@@ -167,4 +165,3 @@ private extension Data {
         append(Data("\r\n".utf8))
     }
 }
-

@@ -189,6 +189,11 @@ private struct RecorderView: View {
 
                 recorderCard
                 sourcePanel
+                if let session = coordinator.currentSession,
+                   session.recordingStatus == .completed {
+                    RecordingFilesPanel(session: session)
+                        .environmentObject(coordinator)
+                }
                 TranscriptPanel()
                     .environmentObject(coordinator)
 
@@ -199,11 +204,11 @@ private struct RecorderView: View {
                 }
 
                 HStack(spacing: 6) {
-                    Image(systemName: models.sttProvider == .disabled ? "lock.shield.fill" : "network")
-                        .foregroundStyle(models.sttProvider == .disabled ? .green : Color.accentColor)
-                    Text(models.sttProvider == .disabled
+                    Image(systemName: models.asrEnabled ? "network" : "lock.shield.fill")
+                        .foregroundStyle(models.asrEnabled ? Color.accentColor : .green)
+                    Text(!models.asrEnabled
                          ? "录音和文字仅保存在此 Mac"
-                         : "录音保存在本机；约 10 秒的短音频片段发送给 \(models.sttProvider.title)")
+                         : "录音保存在本机；动态语音片段发送给 \(models.serviceDisplayName)")
                         .foregroundStyle(.secondary)
                 }
                 .font(.caption)
@@ -243,20 +248,10 @@ private struct RecorderView: View {
                 .multilineTextAlignment(.center)
                 .disabled(coordinator.status.isActive)
                 .padding(.horizontal, 60)
+                .onSubmit { coordinator.renameCurrentMeeting() }
 
             ZStack {
-                Circle()
-                    .stroke(Color.primary.opacity(0.06), lineWidth: 16)
-                    .frame(width: 168, height: 168)
-                Circle()
-                    .trim(from: 0, to: coordinator.status.isActive ? 0.78 : 0.18)
-                    .stroke(
-                        coordinator.isPaused ? Color.orange : Color.red,
-                        style: StrokeStyle(lineWidth: 7, lineCap: .round)
-                    )
-                    .rotationEffect(.degrees(-90))
-                    .frame(width: 168, height: 168)
-                    .animation(.easeInOut(duration: 0.35), value: coordinator.status)
+                RecordingStatusHalo(status: coordinator.status)
 
                 VStack(spacing: 8) {
                     Image(systemName: coordinator.isPaused ? "pause.fill" : "waveform")
@@ -379,9 +374,74 @@ private struct RecorderView: View {
     }
 }
 
+private struct RecordingFilesPanel: View {
+    @EnvironmentObject private var coordinator: RecordingCoordinator
+    let session: MeetingSession
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label("原始录音", systemImage: "waveform.circle")
+                    .font(.headline)
+                Spacer()
+                Button("在 Finder 中显示") { coordinator.openCurrentSessionFolder() }
+                    .buttonStyle(.link)
+            }
+
+            if let url = session.systemAudioURL {
+                AudioFileRow(title: "系统声音", url: url) { coordinator.openAudioFile(url) }
+            }
+            if let url = session.microphoneAudioURL {
+                AudioFileRow(title: "麦克风", url: url) { coordinator.openAudioFile(url) }
+            }
+        }
+        .padding(20)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+private struct AudioFileRow: View {
+    let title: String
+    let url: URL
+    let play: () -> Void
+
+    var body: some View {
+        HStack(spacing: 11) {
+            Image(systemName: "waveform")
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 30, height: 30)
+                .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(title).font(.subheadline.weight(.medium))
+                    Text("原始文件")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.green)
+                }
+                Text("\(url.lastPathComponent) · \(fileSizeText)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .textSelection(.enabled)
+            }
+            Spacer()
+            Button(action: play) { Label("播放", systemImage: "play.fill") }
+                .controlSize(.small)
+        }
+    }
+
+    private var fileSizeText: String {
+        guard
+            let value = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber
+        else { return "文件不可用" }
+        return ByteCountFormatter.string(fromByteCount: value.int64Value, countStyle: .file)
+    }
+}
+
 private struct TranscriptPanel: View {
     @EnvironmentObject private var coordinator: RecordingCoordinator
     @Environment(\.openSettings) private var openSettings
+    @State private var viewMode: TranscriptViewMode = .edited
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -399,16 +459,37 @@ private struct TranscriptPanel: View {
                 }
             }
 
+            if !coordinator.transcriptSegments.isEmpty {
+                HStack(spacing: 10) {
+                    Picker("逐字稿显示", selection: $viewMode) {
+                        ForEach(TranscriptViewMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 300)
+
+                    Spacer()
+
+                    Button("规范化全文", systemImage: "wand.and.stars") {
+                        coordinator.normalizeTranscript()
+                        viewMode = .normalized
+                    }
+                    .controlSize(.small)
+                }
+            }
+
             if coordinator.transcriptSegments.isEmpty {
                 VStack(spacing: 9) {
                     Image(systemName: "quote.bubble")
                         .font(.title2)
                         .foregroundStyle(.tertiary)
-                    Text(coordinator.status.isActive ? "第一段文字会在约 10 秒后出现" : "当前会议还没有逐字稿")
+                    Text(emptyTranscriptMessage)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    if !coordinator.modelSettings.sttIsConfigured {
-                        Button("配置 MiMo / GLM 语音识别") { openSettings() }
+                    if !coordinator.modelSettings.asrIsConfigured {
+                        Button("配置 AI 语音识别") { openSettings() }
                             .buttonStyle(.link)
                     }
                 }
@@ -426,10 +507,7 @@ private struct TranscriptPanel: View {
                                 Text(segment.source.title)
                                     .font(.caption2.weight(.semibold))
                                     .foregroundStyle(segment.source == .microphone ? .orange : Color.accentColor)
-                                Text(segment.text)
-                                    .font(.system(size: 13.5))
-                                    .textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                transcriptContent(for: segment)
                             }
                         }
                     }
@@ -438,6 +516,64 @@ private struct TranscriptPanel: View {
         }
         .padding(20)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var emptyTranscriptMessage: String {
+        guard coordinator.status.isActive else { return "当前会议还没有逐字稿" }
+        let seconds = Int(coordinator.modelSettings.maximumChunkDuration.rounded())
+        return "检测到停顿后会尽快显示；连续讲话最长约 \(seconds) 秒提交一次"
+    }
+
+    @ViewBuilder
+    private func transcriptContent(for segment: TranscriptSegment) -> some View {
+        switch viewMode {
+        case .original:
+            Text(segment.originalText ?? segment.text)
+                .font(.system(size: 13.5))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        case .edited:
+            VStack(alignment: .trailing, spacing: 4) {
+                TextEditor(text: Binding(
+                    get: { segment.text },
+                    set: { coordinator.updateTranscriptSegment(id: segment.id, text: $0) }
+                ))
+                .font(.system(size: 13.5))
+                .scrollContentBackground(.hidden)
+                .frame(minHeight: 44)
+                .padding(5)
+                .background(Color(nsColor: .textBackgroundColor).opacity(0.45), in: RoundedRectangle(cornerRadius: 7))
+
+                if let original = segment.originalText, original != segment.text {
+                    Button("恢复原文") {
+                        coordinator.restoreOriginalTranscriptSegment(id: segment.id)
+                    }
+                    .buttonStyle(.link)
+                    .font(.caption)
+                }
+            }
+        case .normalized:
+            Text(segment.normalizedText ?? segment.text)
+                .font(.system(size: 13.5))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private enum TranscriptViewMode: String, CaseIterable, Identifiable {
+    case original
+    case edited
+    case normalized
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .original: "原始识别"
+        case .edited: "编辑文本"
+        case .normalized: "规范化"
+        }
     }
 }
 
@@ -470,10 +606,10 @@ private struct SummaryPanel: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else if !coordinator.modelSettings.summaryIsConfigured {
                 VStack(spacing: 8) {
-                    Text("配置 MiMo、DeepSeek 或 GLM 后，可根据逐字稿生成结构化会议纪要。")
+                    Text("在同一个 AI 服务连接中配置总结模型后，可根据逐字稿生成结构化会议纪要。")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    Button("打开会议总结设置") { openSettings() }
+                    Button("打开 AI 服务设置") { openSettings() }
                         .buttonStyle(.link)
                 }
                 .frame(maxWidth: .infinity)
@@ -482,6 +618,51 @@ private struct SummaryPanel: View {
         }
         .padding(20)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+private struct RecordingStatusHalo: View {
+    let status: RecordingStatus
+    @State private var pulsing = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.primary.opacity(0.06), lineWidth: 14)
+                .frame(width: 168, height: 168)
+
+            if status == .recording {
+                Circle()
+                    .stroke(Color.red.opacity(pulsing ? 0.08 : 0.34), lineWidth: 5)
+                    .frame(width: 168, height: 168)
+                    .scaleEffect(pulsing ? 1.12 : 1)
+                Circle()
+                    .stroke(Color.red, lineWidth: 5)
+                    .frame(width: 168, height: 168)
+            } else if status == .paused {
+                Circle()
+                    .stroke(Color.orange, style: StrokeStyle(lineWidth: 5, dash: [8, 6]))
+                    .frame(width: 168, height: 168)
+            } else if status == .preparing || status == .saving {
+                ProgressView()
+                    .controlSize(.large)
+                    .offset(y: 54)
+            } else if status == .completed {
+                Circle()
+                    .stroke(Color.green.opacity(0.75), lineWidth: 5)
+                    .frame(width: 168, height: 168)
+            }
+        }
+        .onAppear { updateAnimation() }
+        .onChange(of: status) { _, _ in updateAnimation() }
+    }
+
+    private func updateAnimation() {
+        pulsing = false
+        guard status == .recording else { return }
+        withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+            pulsing = true
+        }
     }
 }
 

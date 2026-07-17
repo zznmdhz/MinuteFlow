@@ -9,20 +9,26 @@ final class RemoteRealtimeTranscriptionService: @unchecked Sendable {
     private let uploadGroup = DispatchGroup()
     private let client = RemoteASRClient()
     private let resultsLock = NSLock()
-    private let chunkDuration: TimeInterval
+    private var maximumChunkDuration: TimeInterval = 3
+    private let minimumChunkDuration: TimeInterval = 0.8
+    private let silenceToFlush: TimeInterval = 0.7
+    private let speechLevelThreshold: Float = 0.1
     private var configuration: ASRConfiguration?
     private var accumulators: [TranscriptSource: ChunkAccumulator] = [:]
     private var running = false
     private var completedSegments: [TranscriptSegment] = []
 
-    init(chunkDuration: TimeInterval = 10) {
-        self.chunkDuration = chunkDuration
-    }
+    init() {}
 
-    func start(sources: Set<TranscriptSource>, configuration: ASRConfiguration) throws {
+    func start(
+        sources: Set<TranscriptSource>,
+        configuration: ASRConfiguration,
+        maximumChunkDuration: TimeInterval
+    ) throws {
         let directory = Self.temporaryDirectory()
         try queue.sync {
             self.configuration = configuration
+            self.maximumChunkDuration = min(max(maximumChunkDuration, 2), 8)
             accumulators = [:]
             resultsLock.withLock { completedSegments = [] }
             for source in sources {
@@ -30,7 +36,7 @@ final class RemoteRealtimeTranscriptionService: @unchecked Sendable {
             }
             running = true
         }
-        onStatus?("等待第一段语音…")
+        onStatus?("动态转写已启动 · 最长 \(Int(self.maximumChunkDuration)) 秒")
     }
 
     func append(_ packet: CapturedAudioBuffer) {
@@ -38,8 +44,26 @@ final class RemoteRealtimeTranscriptionService: @unchecked Sendable {
             guard let self, self.running, let accumulator = self.accumulators[packet.source] else { return }
             do {
                 try accumulator.writer.append(packet.buffer)
-                if accumulator.writer.duration >= self.chunkDuration {
+                let inputDuration = packet.buffer.format.sampleRate > 0
+                    ? Double(packet.buffer.frameLength) / packet.buffer.format.sampleRate
+                    : 0
+                let level = AudioLevelMeter.normalizedLevel(for: packet.buffer)
+                if level >= self.speechLevelThreshold {
+                    accumulator.hasSpeech = true
+                    accumulator.trailingSilence = 0
+                } else if accumulator.hasSpeech {
+                    accumulator.trailingSilence += inputDuration
+                }
+
+                let shouldFlushForSilence = accumulator.hasSpeech
+                    && accumulator.writer.duration >= self.minimumChunkDuration
+                    && accumulator.trailingSilence >= self.silenceToFlush
+                let reachedMaximum = accumulator.writer.duration >= self.maximumChunkDuration
+
+                if shouldFlushForSilence || (reachedMaximum && accumulator.hasSpeech) {
                     try self.flush(accumulator)
+                } else if reachedMaximum && !accumulator.hasSpeech {
+                    try self.discardSilentChunk(accumulator)
                 }
             } catch {
                 self.onError?(error)
@@ -50,8 +74,13 @@ final class RemoteRealtimeTranscriptionService: @unchecked Sendable {
     func finish() async -> [TranscriptSegment] {
         queue.sync {
             running = false
-            for accumulator in accumulators.values where accumulator.writer.duration > 0.25 {
-                try? flush(accumulator)
+            for accumulator in accumulators.values {
+                if accumulator.hasSpeech, accumulator.writer.duration > 0.25 {
+                    try? flush(accumulator)
+                } else {
+                    accumulator.writer.close()
+                    try? FileManager.default.removeItem(at: accumulator.writer.url)
+                }
             }
             accumulators.removeAll()
         }
@@ -71,6 +100,8 @@ final class RemoteRealtimeTranscriptionService: @unchecked Sendable {
         oldWriter.close()
         accumulator.nextStartTime += duration
         accumulator.writer = try WAVChunkWriter(directory: Self.temporaryDirectory())
+        accumulator.hasSpeech = false
+        accumulator.trailingSilence = 0
 
         uploadGroup.enter()
         onStatus?("正在识别 \(Int(startTime))–\(Int(startTime + duration)) 秒…")
@@ -98,6 +129,17 @@ final class RemoteRealtimeTranscriptionService: @unchecked Sendable {
         }
     }
 
+    private func discardSilentChunk(_ accumulator: ChunkAccumulator) throws {
+        let duration = accumulator.writer.duration
+        let oldURL = accumulator.writer.url
+        accumulator.writer.close()
+        try? FileManager.default.removeItem(at: oldURL)
+        accumulator.nextStartTime += duration
+        accumulator.writer = try WAVChunkWriter(directory: Self.temporaryDirectory())
+        accumulator.hasSpeech = false
+        accumulator.trailingSilence = 0
+    }
+
     private static func temporaryDirectory() -> URL {
         FileManager.default.temporaryDirectory
             .appending(path: "MinuteFlow-ASR", directoryHint: .isDirectory)
@@ -108,6 +150,8 @@ private final class ChunkAccumulator: @unchecked Sendable {
     let source: TranscriptSource
     var writer: WAVChunkWriter
     var nextStartTime: TimeInterval = 0
+    var hasSpeech = false
+    var trailingSilence: TimeInterval = 0
 
     init(source: TranscriptSource, directory: URL) throws {
         self.source = source

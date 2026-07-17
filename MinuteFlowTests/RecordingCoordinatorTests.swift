@@ -24,8 +24,8 @@ final class RecordingCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.status, .recording)
         XCTAssertEqual(system.startCount, 1)
         XCTAssertEqual(microphone.startCount, 1)
-        XCTAssertEqual(system.outputURL?.lastPathComponent, "system.m4a")
-        XCTAssertEqual(microphone.outputURL?.lastPathComponent, "microphone.m4a")
+        XCTAssertTrue(system.outputURL?.lastPathComponent.hasSuffix("_双路录音_系统声.m4a") == true)
+        XCTAssertTrue(microphone.outputURL?.lastPathComponent.hasSuffix("_双路录音_麦克风.m4a") == true)
 
         coordinator.pauseRecording()
         XCTAssertEqual(coordinator.status, .paused)
@@ -103,5 +103,6 @@ private final class MockAudioCaptureService: AudioCaptureService, @unchecked Sen
 
 private final class AllowingPermissionManager: PermissionManaging, @unchecked Sendable {
     func requestPermission(for kind: PermissionKind) async -> Bool { true }
+    func currentStatus(for kind: PermissionKind) -> PermissionAuthorizationState { .authorized }
     @MainActor func openSettings(for kind: PermissionKind) {}
 }

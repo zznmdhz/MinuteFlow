@@ -19,6 +19,8 @@ struct TranscriptSegment: Codable, Identifiable, Equatable, Sendable {
     var startTime: TimeInterval
     var endTime: TimeInterval
     var text: String
+    var originalText: String?
+    var normalizedText: String?
     var source: TranscriptSource
     var isFinal: Bool
     var confidence: Float?
@@ -36,9 +38,10 @@ struct TranscriptSegment: Codable, Identifiable, Equatable, Sendable {
         self.startTime = startTime
         self.endTime = endTime
         self.text = text
+        self.originalText = text
+        self.normalizedText = nil
         self.source = source
         self.isFinal = isFinal
         self.confidence = confidence
     }
 }
-

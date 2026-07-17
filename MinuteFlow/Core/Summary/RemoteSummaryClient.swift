@@ -15,7 +15,7 @@ struct RemoteSummaryClient: Sendable {
     ) async throws -> String {
         guard !segments.isEmpty else { throw RemoteModelError.emptyResult }
         let transcript = segments.map { segment in
-            "[\(Self.timestamp(segment.startTime))][\(segment.source.title)] \(segment.text)"
+            "[\(Self.timestamp(segment.startTime))][\(segment.source.title)] \(segment.normalizedText ?? segment.text)"
         }.joined(separator: "\n")
 
         let payload = ChatRequest(
@@ -34,7 +34,7 @@ struct RemoteSummaryClient: Sendable {
         var request = URLRequest(url: configuration.endpoint, timeoutInterval: 180)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(configuration.apiKey)", forHTTPHeaderField: "Authorization")
+        APIRequestAuthentication.apply(apiKey: configuration.apiKey, endpoint: configuration.endpoint, to: &request)
         request.httpBody = try JSONEncoder().encode(payload)
 
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -74,4 +74,3 @@ private struct ChatResponse: Decodable {
     struct Choice: Decodable { let message: Message }
     struct Message: Decodable { let content: String }
 }
-

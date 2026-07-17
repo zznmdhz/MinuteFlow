@@ -20,6 +20,8 @@ final class RecordingCoordinator: ObservableObject {
     @Published var meetingTitle = ""
     @Published var userMessage: String?
     @Published var permissionIssue: PermissionIssue?
+    @Published private(set) var microphonePermission: PermissionAuthorizationState = .notDetermined
+    @Published private(set) var systemAudioPermission: PermissionAuthorizationState = .notDetermined
 
     var microphoneName: String { microphoneService.displayName }
     let modelSettings: ModelSettingsStore
@@ -70,6 +72,7 @@ final class RecordingCoordinator: ObservableObject {
 
         configureCallbacks()
         reloadRecentSessions()
+        refreshPermissionStates()
     }
 
     func startRecording() async {
@@ -140,6 +143,8 @@ final class RecordingCoordinator: ObservableObject {
                     warnings.append("麦克风未录制：缺少麦克风权限。")
                 }
             }
+
+            refreshPermissionStates()
 
             guard systemAudioStarted || microphoneStarted else {
                 if transcriptionRunning {
@@ -255,10 +260,51 @@ final class RecordingCoordinator: ObservableObject {
         permissionManager.openSettings(for: permissionIssue.kind)
     }
 
+    func openPermissionSettings(_ kind: PermissionKind) {
+        permissionManager.openSettings(for: kind)
+    }
+
+    func refreshPermissionStates() {
+        microphonePermission = permissionManager.currentStatus(for: .microphone)
+        systemAudioPermission = permissionManager.currentStatus(for: .systemAudio)
+    }
+
+    func requestPermission(_ kind: PermissionKind) async {
+        _ = await permissionManager.requestPermission(for: kind)
+        refreshPermissionStates()
+        if permissionManager.currentStatus(for: kind) != .authorized {
+            permissionIssue = PermissionIssue(
+                kind: kind,
+                detail: kind == .systemAudio
+                    ? "开启后通常需要重新启动 MinuteFlow，系统才会更新捕获权限。"
+                    : "用于录制你的发言；开启后可以立即重新测试。"
+            )
+        }
+    }
+
     func openCurrentSessionFolder() {
         guard let currentSession else { return }
         let directory = repository.sessionDirectory(for: currentSession.id)
         NSWorkspace.shared.activateFileViewerSelecting([directory])
+    }
+
+    func openAudioFile(_ url: URL) {
+        NSWorkspace.shared.open(url)
+    }
+
+    func renameCurrentMeeting() {
+        guard var session = currentSession, !status.isActive else { return }
+        let title = meetingTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty, title != session.title else { return }
+        session.title = title
+        session.updatedAt = Date()
+        do {
+            try repository.save(session)
+            currentSession = session
+            reloadRecentSessions()
+        } catch {
+            userMessage = "会议名称保存失败：\(error.localizedDescription)"
+        }
     }
 
     func selectSession(_ session: MeetingSession) {
@@ -267,6 +313,7 @@ final class RecordingCoordinator: ObservableObject {
             return
         }
         currentSession = session
+        meetingTitle = session.title
         status = session.recordingStatus
         elapsedTime = session.duration
         transcriptSegments = (try? repository.loadTranscript(sessionID: session.id)) ?? []
@@ -319,7 +366,7 @@ final class RecordingCoordinator: ObservableObject {
             modelSettings.summaryIsConfigured,
             let endpoint = modelSettings.resolvedSummaryEndpoint
         else {
-            userMessage = "请先在设置 → 会议总结中配置 MiMo、DeepSeek 或 GLM 模型。"
+            userMessage = "请先在设置 → AI 服务中配置并测试总结模型。"
             return
         }
         guard var session = currentSession else { return }
@@ -333,7 +380,7 @@ final class RecordingCoordinator: ObservableObject {
                 configuration: SummaryConfiguration(
                     endpoint: endpoint,
                     model: modelSettings.summaryModel,
-                    apiKey: modelSettings.summaryAPIKey,
+                    apiKey: modelSettings.apiKey,
                     prompt: modelSettings.summaryPrompt
                 )
             )
@@ -347,6 +394,35 @@ final class RecordingCoordinator: ObservableObject {
         } catch {
             userMessage = "会议总结失败：\(error.localizedDescription)"
         }
+    }
+
+    func updateTranscriptSegment(id: UUID, text: String) {
+        guard let index = transcriptSegments.firstIndex(where: { $0.id == id }) else { return }
+        if transcriptSegments[index].originalText == nil {
+            transcriptSegments[index].originalText = transcriptSegments[index].text
+        }
+        transcriptSegments[index].text = text
+        transcriptSegments[index].normalizedText = nil
+        persistCurrentTranscript()
+    }
+
+    func restoreOriginalTranscriptSegment(id: UUID) {
+        guard
+            let index = transcriptSegments.firstIndex(where: { $0.id == id }),
+            let original = transcriptSegments[index].originalText
+        else { return }
+        transcriptSegments[index].text = original
+        transcriptSegments[index].normalizedText = nil
+        persistCurrentTranscript()
+    }
+
+    func normalizeTranscript() {
+        guard !transcriptSegments.isEmpty else { return }
+        for index in transcriptSegments.indices {
+            transcriptSegments[index].normalizedText = TranscriptNormalizer.normalize(transcriptSegments[index].text)
+        }
+        persistCurrentTranscript()
+        userMessage = "逐字稿已完成基础规范化；原始识别结果仍保留。"
     }
 
     func dismissMessage() {
@@ -440,16 +516,16 @@ final class RecordingCoordinator: ObservableObject {
     }
 
     private func startTranscriptionIfConfigured() {
-        guard modelSettings.sttProvider != .disabled else {
+        guard modelSettings.asrEnabled else {
             transcriptionActivity = "已关闭自动转写"
             return
         }
         guard
-            modelSettings.sttIsConfigured,
-            let endpoint = modelSettings.resolvedSTTEndpoint
+            modelSettings.asrIsConfigured,
+            let endpoint = modelSettings.resolvedASREndpoint
         else {
             transcriptionActivity = "等待配置语音识别模型"
-            userMessage = "录音会正常进行；请在设置 → 语音识别中填写 MiMo 或 GLM API Key 后启用自动转写。"
+            userMessage = "录音会正常进行；请在设置 → AI 服务中填写 Base URL、Token 和 ASR 模型后启用自动转写。"
             return
         }
 
@@ -460,12 +536,13 @@ final class RecordingCoordinator: ObservableObject {
             try transcriptionService.start(
                 sources: sources,
                 configuration: ASRConfiguration(
-                    provider: modelSettings.sttProvider,
+                    transport: modelSettings.detectedASRTransport,
                     endpoint: endpoint,
-                    model: modelSettings.resolvedSTTModel,
-                    apiKey: modelSettings.sttAPIKey,
+                    model: modelSettings.asrModel,
+                    apiKey: modelSettings.apiKey,
                     language: modelSettings.transcriptionLanguage
-                )
+                ),
+                maximumChunkDuration: modelSettings.maximumChunkDuration
             )
             transcriptionRunning = true
         } catch {

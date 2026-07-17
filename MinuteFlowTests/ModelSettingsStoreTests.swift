@@ -4,44 +4,54 @@ import XCTest
 
 @MainActor
 final class ModelSettingsStoreTests: XCTestCase {
-    func testOfficialProviderEndpointsAndModels() {
+    func testMiMoTokenPlanUsesChatCompletionsForASRAndSummary() {
         let suiteName = "MinuteFlowModelSettingsTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let settings = ModelSettingsStore(defaults: defaults)
 
-        settings.sttProvider = .xiaomiMiMo
-        XCTAssertEqual(settings.resolvedSTTModel, "mimo-v2.5-asr")
-        XCTAssertEqual(settings.resolvedSTTEndpoint?.host, "api.xiaomimimo.com")
+        settings.baseURL = "https://token-plan-cn.xiaomimimo.com/v1"
+        settings.asrModel = "mimo-v2.5-asr"
 
-        settings.sttProvider = .zhipuGLM
-        XCTAssertEqual(settings.resolvedSTTModel, "glm-asr-2512")
-        XCTAssertEqual(settings.resolvedSTTEndpoint?.host, "open.bigmodel.cn")
-
-        settings.summaryProvider = .deepSeek
-        XCTAssertEqual(settings.summaryModel, "deepseek-chat")
-        XCTAssertEqual(settings.resolvedSummaryEndpoint?.host, "api.deepseek.com")
+        XCTAssertEqual(settings.detectedASRTransport, .miMoChatAudio)
+        XCTAssertEqual(
+            settings.resolvedASREndpoint?.absoluteString,
+            "https://token-plan-cn.xiaomimimo.com/v1/chat/completions"
+        )
+        XCTAssertEqual(
+            settings.resolvedSummaryEndpoint?.absoluteString,
+            "https://token-plan-cn.xiaomimimo.com/v1/chat/completions"
+        )
     }
 
-    func testCustomEndpointsAppendCompatiblePaths() {
+    func testUnknownCompatibleServiceUsesAudioTranscriptions() {
         let suiteName = "MinuteFlowCustomSettingsTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let settings = ModelSettingsStore(defaults: defaults)
 
-        settings.sttProvider = .customOpenAICompatible
-        settings.sttBaseURL = "https://models.example.com/v1/"
+        settings.baseURL = "https://models.example.com/v1/"
+
+        XCTAssertEqual(settings.detectedASRTransport, .openAIAudioTranscription)
         XCTAssertEqual(
-            settings.resolvedSTTEndpoint?.absoluteString,
+            settings.resolvedASREndpoint?.absoluteString,
             "https://models.example.com/v1/audio/transcriptions"
         )
-
-        settings.summaryProvider = .customOpenAICompatible
-        settings.summaryBaseURL = "https://models.example.com/v1"
         XCTAssertEqual(
             settings.resolvedSummaryEndpoint?.absoluteString,
             "https://models.example.com/v1/chat/completions"
         )
+    }
+
+    func testInvalidBaseURLIsRejected() {
+        let suiteName = "MinuteFlowInvalidSettingsTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = ModelSettingsStore(defaults: defaults)
+
+        settings.baseURL = "not-a-url"
+        XCTAssertNil(settings.resolvedASREndpoint)
+        XCTAssertFalse(settings.connectionIsConfigured)
     }
 }
 
