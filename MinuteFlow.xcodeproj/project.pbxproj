@@ -1,0 +1,616 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0380A25D9C167845BE886F9F /* AudioLevelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D94C1303E5571332B104BDC /* AudioLevelView.swift */; };
+		0429D757A3553A3223EF81BB /* MenuBarContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B7AF7F8F060D26B36DFE464 /* MenuBarContent.swift */; };
+		0D07ABC59B16E736390BFDBA /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E4DD7C7BC771AEEB71CA116 /* SettingsView.swift */; };
+		18AAF07739378CCDFCEBA7B7 /* AudioFileWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B7D1449CC5ADC30CDF85E51 /* AudioFileWriter.swift */; };
+		18D9388BE0011D0F9FB59E9E /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16DC370783FB55F2E271BFA0 /* MainView.swift */; };
+		1DB2F8C83A7952AB0A1D5193 /* RecordingStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADDC892940A918DCEC413C9D /* RecordingStatus.swift */; };
+		2458BB35D315BC682FCC9714 /* DurationFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D040F518D56B4F4D68FC1A7 /* DurationFormatter.swift */; };
+		24C77417E31F70F5C35DE34B /* CoreMedia.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 26499786989D508BE332BBA3 /* CoreMedia.framework */; };
+		34D2E40AC7F3F287F0E41694 /* MeetingRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D66172872C75836D13615123 /* MeetingRepositoryTests.swift */; };
+		3C1413D19E85FA63BB5BA82F /* AudioCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 006A4E8E1E9DA0DBA1AB5AFA /* AudioCaptureService.swift */; };
+		430C0ADD4266C740E7B0605D /* PermissionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 754A62A2B532D15A6A79FD73 /* PermissionManager.swift */; };
+		43C5FB0447DE665606E06ACA /* AudioLevelMeter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 658182D53FB832E9DCFB2EC6 /* AudioLevelMeter.swift */; };
+		47F6EDFECAFA7053BA51CB20 /* MinuteFlowApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32E8D9392681CD3EF463E4E6 /* MinuteFlowApp.swift */; };
+		7BBEA2AA4648A7C61FB51217 /* AudioCaptureServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19116655A93CAF5E84986C10 /* AudioCaptureServiceTests.swift */; };
+		861B2B840D437872902F482D /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D0454C174A442DB0A447F56 /* AppDelegate.swift */; };
+		8EA9EF3238B5F252D54EE08E /* AudioSourceSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 756020D59429A366922B8E35 /* AudioSourceSelection.swift */; };
+		9046223D545C51822BC72ACB /* ScreenCaptureKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DEC79055EBBB6D7CABF2127A /* ScreenCaptureKit.framework */; };
+		96EE53D26D52CE6B298D09BB /* MicrophoneCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12579BBD24BB5413A2D6A380 /* MicrophoneCaptureService.swift */; };
+		A98C7C49895FD5F8831CE3B5 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CA62E798CE8634FC099CB9AF /* AVFoundation.framework */; };
+		B3E62D1F9C91376F635D5AA5 /* SystemAudioCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A39BA96E1A0C9C2A2D10A6F5 /* SystemAudioCaptureService.swift */; };
+		BF38E9A7E8EC2FB063193A7E /* RecordingCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BF84069868E6FF00D7C78F0 /* RecordingCoordinatorTests.swift */; };
+		C3B09BC29801270215FBD2AF /* CMSampleBuffer+PCM.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3658392DDF9C631A0B916C4E /* CMSampleBuffer+PCM.swift */; };
+		D87F5D78C20BBF57A2161CCB /* RecordingCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F68D2A9404DBC5ED97317F94 /* RecordingCoordinator.swift */; };
+		EA89DE3B694CACDD5F922933 /* MeetingRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3414A21EE29D4A0842B394D7 /* MeetingRepository.swift */; };
+		EAD46B624F4D0338A03DE279 /* MeetingSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1645D7750644E31AC42CE80 /* MeetingSession.swift */; };
+		F66D49B4021076468CD45AD1 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 95DDCDF7FEF85AB3AD942C4F /* CoreGraphics.framework */; };
+		F7D914A5C0A54B503B98B115 /* DependencyContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09D2C53B97E1DC013D1FAC63 /* DependencyContainer.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		0E6F3345C8F943959C8DF05A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CC828D8360D815ABCCD870FD /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C6C5879A323D233DF2827B68;
+			remoteInfo = MinuteFlow;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		006A4E8E1E9DA0DBA1AB5AFA /* AudioCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCaptureService.swift; sourceTree = "<group>"; };
+		09D2C53B97E1DC013D1FAC63 /* DependencyContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DependencyContainer.swift; sourceTree = "<group>"; };
+		0B7D1449CC5ADC30CDF85E51 /* AudioFileWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioFileWriter.swift; sourceTree = "<group>"; };
+		0D040F518D56B4F4D68FC1A7 /* DurationFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DurationFormatter.swift; sourceTree = "<group>"; };
+		12579BBD24BB5413A2D6A380 /* MicrophoneCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicrophoneCaptureService.swift; sourceTree = "<group>"; };
+		16DC370783FB55F2E271BFA0 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
+		19116655A93CAF5E84986C10 /* AudioCaptureServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCaptureServiceTests.swift; sourceTree = "<group>"; };
+		19F1BB0D48836A87CEEF35BE /* MinuteFlow.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MinuteFlow.entitlements; sourceTree = "<group>"; };
+		26499786989D508BE332BBA3 /* CoreMedia.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreMedia.framework; path = System/Library/Frameworks/CoreMedia.framework; sourceTree = SDKROOT; };
+		32E8D9392681CD3EF463E4E6 /* MinuteFlowApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinuteFlowApp.swift; sourceTree = "<group>"; };
+		3414A21EE29D4A0842B394D7 /* MeetingRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingRepository.swift; sourceTree = "<group>"; };
+		3658392DDF9C631A0B916C4E /* CMSampleBuffer+PCM.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMSampleBuffer+PCM.swift"; sourceTree = "<group>"; };
+		4D0454C174A442DB0A447F56 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		658182D53FB832E9DCFB2EC6 /* AudioLevelMeter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioLevelMeter.swift; sourceTree = "<group>"; };
+		6BF84069868E6FF00D7C78F0 /* RecordingCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingCoordinatorTests.swift; sourceTree = "<group>"; };
+		754A62A2B532D15A6A79FD73 /* PermissionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionManager.swift; sourceTree = "<group>"; };
+		756020D59429A366922B8E35 /* AudioSourceSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSourceSelection.swift; sourceTree = "<group>"; };
+		7833BBC71FC56AC7787B06E4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		7B7AF7F8F060D26B36DFE464 /* MenuBarContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarContent.swift; sourceTree = "<group>"; };
+		7E4DD7C7BC771AEEB71CA116 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		95DDCDF7FEF85AB3AD942C4F /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
+		9D94C1303E5571332B104BDC /* AudioLevelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioLevelView.swift; sourceTree = "<group>"; };
+		A39BA96E1A0C9C2A2D10A6F5 /* SystemAudioCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemAudioCaptureService.swift; sourceTree = "<group>"; };
+		ADDC892940A918DCEC413C9D /* RecordingStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingStatus.swift; sourceTree = "<group>"; };
+		CA62E798CE8634FC099CB9AF /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
+		D66172872C75836D13615123 /* MeetingRepositoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingRepositoryTests.swift; sourceTree = "<group>"; };
+		DA301D89A785B5ABB9A4D564 /* MinuteFlow.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MinuteFlow.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		DEC79055EBBB6D7CABF2127A /* ScreenCaptureKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ScreenCaptureKit.framework; path = System/Library/Frameworks/ScreenCaptureKit.framework; sourceTree = SDKROOT; };
+		F0EAE5AAAE6604C8E9C6F2C3 /* MinuteFlowTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MinuteFlowTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		F1645D7750644E31AC42CE80 /* MeetingSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingSession.swift; sourceTree = "<group>"; };
+		F68D2A9404DBC5ED97317F94 /* RecordingCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingCoordinator.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A6BB37B7D64A8EB954D5D01D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A98C7C49895FD5F8831CE3B5 /* AVFoundation.framework in Frameworks */,
+				9046223D545C51822BC72ACB /* ScreenCaptureKit.framework in Frameworks */,
+				24C77417E31F70F5C35DE34B /* CoreMedia.framework in Frameworks */,
+				F66D49B4021076468CD45AD1 /* CoreGraphics.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		00492BD28B2C2723979A2ED6 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				7E4DD7C7BC771AEEB71CA116 /* SettingsView.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		2098B70E5006208A4C009D5C /* Recording */ = {
+			isa = PBXGroup;
+			children = (
+				F68D2A9404DBC5ED97317F94 /* RecordingCoordinator.swift */,
+			);
+			path = Recording;
+			sourceTree = "<group>";
+		};
+		245414C57D4FB32E19650A14 /* MinuteFlow */ = {
+			isa = PBXGroup;
+			children = (
+				EC404FEF0C74E52872499634 /* App */,
+				3204D51D4023DA5F13449128 /* Core */,
+				6B3B9F7962C4B4034C56DE52 /* Features */,
+				D0203753A70BE59B7240C938 /* Models */,
+				DE6330BFE68FF36C759AB3F0 /* Shared */,
+				CCB87E437A52EAE097140B35 /* Supporting */,
+			);
+			path = MinuteFlow;
+			sourceTree = "<group>";
+		};
+		3204D51D4023DA5F13449128 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				3C8346BD58AC4424CD9CDB61 /* Audio */,
+				875D4EC5AD185E01756C3000 /* Permissions */,
+				2098B70E5006208A4C009D5C /* Recording */,
+				EF4F4A5DEB385A4CEF52BCD5 /* Storage */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+		33D418B55D2A17B759B22A92 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				CA62E798CE8634FC099CB9AF /* AVFoundation.framework */,
+				95DDCDF7FEF85AB3AD942C4F /* CoreGraphics.framework */,
+				26499786989D508BE332BBA3 /* CoreMedia.framework */,
+				DEC79055EBBB6D7CABF2127A /* ScreenCaptureKit.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		3752C9BCCABA4545F038F9AF /* Recording */ = {
+			isa = PBXGroup;
+			children = (
+				9D94C1303E5571332B104BDC /* AudioLevelView.swift */,
+				16DC370783FB55F2E271BFA0 /* MainView.swift */,
+				7B7AF7F8F060D26B36DFE464 /* MenuBarContent.swift */,
+			);
+			path = Recording;
+			sourceTree = "<group>";
+		};
+		3C8346BD58AC4424CD9CDB61 /* Audio */ = {
+			isa = PBXGroup;
+			children = (
+				006A4E8E1E9DA0DBA1AB5AFA /* AudioCaptureService.swift */,
+				0B7D1449CC5ADC30CDF85E51 /* AudioFileWriter.swift */,
+				658182D53FB832E9DCFB2EC6 /* AudioLevelMeter.swift */,
+				3658392DDF9C631A0B916C4E /* CMSampleBuffer+PCM.swift */,
+				12579BBD24BB5413A2D6A380 /* MicrophoneCaptureService.swift */,
+				A39BA96E1A0C9C2A2D10A6F5 /* SystemAudioCaptureService.swift */,
+			);
+			path = Audio;
+			sourceTree = "<group>";
+		};
+		5A5E30876EF56D4B880D1843 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				DA301D89A785B5ABB9A4D564 /* MinuteFlow.app */,
+				F0EAE5AAAE6604C8E9C6F2C3 /* MinuteFlowTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		6B3B9F7962C4B4034C56DE52 /* Features */ = {
+			isa = PBXGroup;
+			children = (
+				3752C9BCCABA4545F038F9AF /* Recording */,
+				00492BD28B2C2723979A2ED6 /* Settings */,
+			);
+			path = Features;
+			sourceTree = "<group>";
+		};
+		875D4EC5AD185E01756C3000 /* Permissions */ = {
+			isa = PBXGroup;
+			children = (
+				754A62A2B532D15A6A79FD73 /* PermissionManager.swift */,
+			);
+			path = Permissions;
+			sourceTree = "<group>";
+		};
+		CCB87E437A52EAE097140B35 /* Supporting */ = {
+			isa = PBXGroup;
+			children = (
+				7833BBC71FC56AC7787B06E4 /* Info.plist */,
+				19F1BB0D48836A87CEEF35BE /* MinuteFlow.entitlements */,
+			);
+			path = Supporting;
+			sourceTree = "<group>";
+		};
+		D0203753A70BE59B7240C938 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				756020D59429A366922B8E35 /* AudioSourceSelection.swift */,
+				F1645D7750644E31AC42CE80 /* MeetingSession.swift */,
+				ADDC892940A918DCEC413C9D /* RecordingStatus.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		D5E4105E91622BDFDCFFF307 = {
+			isa = PBXGroup;
+			children = (
+				245414C57D4FB32E19650A14 /* MinuteFlow */,
+				F7FC884F41D2DA83B97E5CE3 /* MinuteFlowTests */,
+				33D418B55D2A17B759B22A92 /* Frameworks */,
+				5A5E30876EF56D4B880D1843 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		DE6330BFE68FF36C759AB3F0 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				0D040F518D56B4F4D68FC1A7 /* DurationFormatter.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		EC404FEF0C74E52872499634 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				4D0454C174A442DB0A447F56 /* AppDelegate.swift */,
+				09D2C53B97E1DC013D1FAC63 /* DependencyContainer.swift */,
+				32E8D9392681CD3EF463E4E6 /* MinuteFlowApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		EF4F4A5DEB385A4CEF52BCD5 /* Storage */ = {
+			isa = PBXGroup;
+			children = (
+				3414A21EE29D4A0842B394D7 /* MeetingRepository.swift */,
+			);
+			path = Storage;
+			sourceTree = "<group>";
+		};
+		F7FC884F41D2DA83B97E5CE3 /* MinuteFlowTests */ = {
+			isa = PBXGroup;
+			children = (
+				19116655A93CAF5E84986C10 /* AudioCaptureServiceTests.swift */,
+				D66172872C75836D13615123 /* MeetingRepositoryTests.swift */,
+				6BF84069868E6FF00D7C78F0 /* RecordingCoordinatorTests.swift */,
+			);
+			path = MinuteFlowTests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A26187BB0A9F2DCC0E363D9F /* MinuteFlowTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 53D0970240EA97C1FB890A72 /* Build configuration list for PBXNativeTarget "MinuteFlowTests" */;
+			buildPhases = (
+				AB5D7D3A3A85AE32B397333D /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				E90AF35120D1497F86ED5407 /* PBXTargetDependency */,
+			);
+			name = MinuteFlowTests;
+			packageProductDependencies = (
+			);
+			productName = MinuteFlowTests;
+			productReference = F0EAE5AAAE6604C8E9C6F2C3 /* MinuteFlowTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		C6C5879A323D233DF2827B68 /* MinuteFlow */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8526CA0BF628619F4AC46C53 /* Build configuration list for PBXNativeTarget "MinuteFlow" */;
+			buildPhases = (
+				B264DE8B216D357052E5AA12 /* Sources */,
+				A6BB37B7D64A8EB954D5D01D /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MinuteFlow;
+			packageProductDependencies = (
+			);
+			productName = MinuteFlow;
+			productReference = DA301D89A785B5ABB9A4D564 /* MinuteFlow.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		CC828D8360D815ABCCD870FD /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					A26187BB0A9F2DCC0E363D9F = {
+						ProvisioningStyle = Automatic;
+					};
+					C6C5879A323D233DF2827B68 = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 4DA73E6C1841CA571293C590 /* Build configuration list for PBXProject "MinuteFlow" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = D5E4105E91622BDFDCFFF307;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 5A5E30876EF56D4B880D1843 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				C6C5879A323D233DF2827B68 /* MinuteFlow */,
+				A26187BB0A9F2DCC0E363D9F /* MinuteFlowTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AB5D7D3A3A85AE32B397333D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7BBEA2AA4648A7C61FB51217 /* AudioCaptureServiceTests.swift in Sources */,
+				34D2E40AC7F3F287F0E41694 /* MeetingRepositoryTests.swift in Sources */,
+				BF38E9A7E8EC2FB063193A7E /* RecordingCoordinatorTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B264DE8B216D357052E5AA12 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				861B2B840D437872902F482D /* AppDelegate.swift in Sources */,
+				3C1413D19E85FA63BB5BA82F /* AudioCaptureService.swift in Sources */,
+				18AAF07739378CCDFCEBA7B7 /* AudioFileWriter.swift in Sources */,
+				43C5FB0447DE665606E06ACA /* AudioLevelMeter.swift in Sources */,
+				0380A25D9C167845BE886F9F /* AudioLevelView.swift in Sources */,
+				8EA9EF3238B5F252D54EE08E /* AudioSourceSelection.swift in Sources */,
+				C3B09BC29801270215FBD2AF /* CMSampleBuffer+PCM.swift in Sources */,
+				F7D914A5C0A54B503B98B115 /* DependencyContainer.swift in Sources */,
+				2458BB35D315BC682FCC9714 /* DurationFormatter.swift in Sources */,
+				18D9388BE0011D0F9FB59E9E /* MainView.swift in Sources */,
+				EA89DE3B694CACDD5F922933 /* MeetingRepository.swift in Sources */,
+				EAD46B624F4D0338A03DE279 /* MeetingSession.swift in Sources */,
+				0429D757A3553A3223EF81BB /* MenuBarContent.swift in Sources */,
+				96EE53D26D52CE6B298D09BB /* MicrophoneCaptureService.swift in Sources */,
+				47F6EDFECAFA7053BA51CB20 /* MinuteFlowApp.swift in Sources */,
+				430C0ADD4266C740E7B0605D /* PermissionManager.swift in Sources */,
+				D87F5D78C20BBF57A2161CCB /* RecordingCoordinator.swift in Sources */,
+				1DB2F8C83A7952AB0A1D5193 /* RecordingStatus.swift in Sources */,
+				0D07ABC59B16E736390BFDBA /* SettingsView.swift in Sources */,
+				B3E62D1F9C91376F635D5AA5 /* SystemAudioCaptureService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		E90AF35120D1497F86ED5407 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C6C5879A323D233DF2827B68 /* MinuteFlow */;
+			targetProxy = 0E6F3345C8F943959C8DF05A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		01FF842BC75347DAE3E615D4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = MinuteFlow/Supporting/MinuteFlow.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = MinuteFlow/Supporting/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.minuteflow.app;
+				PRODUCT_NAME = MinuteFlow;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		3DFD91CBB6AC3838890BCE1F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.minuteflow.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MinuteFlow.app/Contents/MacOS/MinuteFlow";
+			};
+			name = Release;
+		};
+		5918CB9949962442847320C3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.minuteflow.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MinuteFlow.app/Contents/MacOS/MinuteFlow";
+			};
+			name = Debug;
+		};
+		795BAF207C2B589C8CD22749 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		B81EBC34CB9AFEA8A411FAD5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		FAE03B471D48BB2B815EDF63 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = MinuteFlow/Supporting/MinuteFlow.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = MinuteFlow/Supporting/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.minuteflow.app;
+				PRODUCT_NAME = MinuteFlow;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		4DA73E6C1841CA571293C590 /* Build configuration list for PBXProject "MinuteFlow" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B81EBC34CB9AFEA8A411FAD5 /* Debug */,
+				795BAF207C2B589C8CD22749 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		53D0970240EA97C1FB890A72 /* Build configuration list for PBXNativeTarget "MinuteFlowTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5918CB9949962442847320C3 /* Debug */,
+				3DFD91CBB6AC3838890BCE1F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		8526CA0BF628619F4AC46C53 /* Build configuration list for PBXNativeTarget "MinuteFlow" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				01FF842BC75347DAE3E615D4 /* Debug */,
+				FAE03B471D48BB2B815EDF63 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = CC828D8360D815ABCCD870FD /* Project object */;
+}
