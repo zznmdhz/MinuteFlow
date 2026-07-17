@@ -46,7 +46,12 @@ struct SettingsView: View {
             Section("一个连接") {
                 TextField("连接名称", text: $models.connectionName, prompt: Text("例如 MiMo Token Plan"))
                 TextField("Base URL", text: $models.baseURL, prompt: Text("https://token-plan-cn.xiaomimimo.com/v1"))
-                SecureField("API Key / Token", text: $models.apiKey)
+                HStack {
+                    SecureField("API Key / Token", text: $models.apiKey)
+                    Button("保存") { models.retrySavingCredential() }
+                        .disabled(models.apiKey.isEmpty)
+                }
+                CredentialPersistenceRow(state: models.credentialPersistenceState)
                 LabeledContent("已识别协议", value: models.detectedASRTransport.title)
             }
 
@@ -219,11 +224,38 @@ struct SettingsView: View {
                 }
             }
             Section {
-                Label("Token 保存在 macOS 钥匙串，不会写入会议文件或运行日志。", systemImage: "key.fill")
+                Label("优先保存到 macOS 钥匙串；钥匙串不可用时保存到权限为 600 的本机保护文件。不会写入会议文件或日志。", systemImage: "key.fill")
                     .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+private struct CredentialPersistenceRow: View {
+    let state: CredentialPersistenceState
+
+    var body: some View {
+        Label(state.message, systemImage: icon)
+            .font(.caption)
+            .foregroundStyle(color)
+            .textSelection(.enabled)
+    }
+
+    private var icon: String {
+        switch state {
+        case .missing: "key"
+        case .savedToKeychain, .savedToProtectedFile: "checkmark.circle.fill"
+        case .failure: "xmark.circle.fill"
+        }
+    }
+
+    private var color: Color {
+        switch state {
+        case .missing: .secondary
+        case .savedToKeychain, .savedToProtectedFile: .green
+        case .failure: .red
+        }
     }
 }
 

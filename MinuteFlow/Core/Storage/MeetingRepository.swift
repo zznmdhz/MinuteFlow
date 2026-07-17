@@ -24,7 +24,14 @@ struct LocalMeetingRepository: MeetingRepository {
             self.rootDirectory = rootDirectory
         } else {
             let applicationSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            self.rootDirectory = applicationSupport.appending(path: "MinuteFlow/Sessions", directoryHint: .isDirectory)
+            let standardDirectory = applicationSupport.appending(path: "MinuteFlow/Sessions", directoryHint: .isDirectory)
+            let legacySandboxDirectory = fileManager.homeDirectoryForCurrentUser.appending(
+                path: "Library/Containers/com.minuteflow.app/Data/Library/Application Support/MinuteFlow/Sessions",
+                directoryHint: .isDirectory
+            )
+            self.rootDirectory = fileManager.fileExists(atPath: legacySandboxDirectory.path)
+                ? legacySandboxDirectory
+                : standardDirectory
         }
 
         let encoder = JSONEncoder()

@@ -13,11 +13,28 @@ enum ASRTransport: String, Sendable {
     }
 }
 
+enum CredentialPersistenceState: Equatable, Sendable {
+    case missing
+    case savedToKeychain
+    case savedToProtectedFile
+    case failure(String)
+
+    var message: String {
+        switch self {
+        case .missing: "尚未填写 Token"
+        case .savedToKeychain: "已安全保存到 macOS 钥匙串"
+        case .savedToProtectedFile: "系统钥匙串不可用；已保存到仅当前用户可读的本机保护文件"
+        case .failure(let message): message
+        }
+    }
+}
+
 @MainActor
 final class ModelSettingsStore: ObservableObject {
     @Published var connectionName: String { didSet { save(connectionName, key: Keys.connectionName) } }
     @Published var baseURL: String { didSet { save(baseURL, key: Keys.baseURL) } }
-    @Published var apiKey: String { didSet { KeychainStore.write(apiKey, key: Keys.apiKey) } }
+    @Published var apiKey: String { didSet { persistCredential() } }
+    @Published private(set) var credentialPersistenceState: CredentialPersistenceState
     @Published var asrEnabled: Bool { didSet { save(asrEnabled, key: Keys.asrEnabled) } }
     @Published var asrModel: String { didSet { save(asrModel, key: Keys.asrModel) } }
     @Published var transcriptionLanguage: String { didSet { save(transcriptionLanguage, key: Keys.language) } }
@@ -30,15 +47,28 @@ final class ModelSettingsStore: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        Self.migrateSandboxedDefaultsIfNeeded(into: defaults)
 
         let migratedBaseURL = defaults.string(forKey: LegacyKeys.sttBaseURL)
         connectionName = defaults.string(forKey: Keys.connectionName) ?? "MiMo Token Plan"
         baseURL = defaults.string(forKey: Keys.baseURL)
             ?? (migratedBaseURL?.isEmpty == false ? migratedBaseURL! : "https://token-plan-cn.xiaomimimo.com/v1")
 
-        let currentKey = KeychainStore.read(key: Keys.apiKey)
-        let legacyKey = KeychainStore.read(key: LegacyKeys.sttAPIKey)
-        apiKey = currentKey.isEmpty ? legacyKey : currentKey
+        var currentCredential = StoredCredentialResult(value: "", backend: nil)
+        var legacyCredential = StoredCredentialResult(value: "", backend: nil)
+        var credentialReadError: Error?
+        do {
+            currentCredential = try CredentialStore.read(key: Keys.apiKey)
+            legacyCredential = try CredentialStore.read(key: LegacyKeys.sttAPIKey)
+        } catch {
+            credentialReadError = error
+        }
+
+        let resolvedCredential = currentCredential.value.isEmpty ? legacyCredential : currentCredential
+        let resolvedKey = resolvedCredential.value
+        apiKey = resolvedKey
+        credentialPersistenceState = credentialReadError.map { .failure($0.localizedDescription) }
+            ?? Self.persistenceState(for: resolvedCredential)
 
         asrEnabled = defaults.object(forKey: Keys.asrEnabled) as? Bool ?? true
         asrModel = defaults.string(forKey: Keys.asrModel)
@@ -58,9 +88,18 @@ final class ModelSettingsStore: ObservableObject {
             ?? defaults.string(forKey: LegacyKeys.summaryPrompt)
             ?? Self.defaultSummaryPrompt
 
-        if currentKey.isEmpty, !legacyKey.isEmpty {
-            KeychainStore.write(legacyKey, key: Keys.apiKey)
+        if credentialReadError == nil, currentCredential.value.isEmpty, !legacyCredential.value.isEmpty {
+            do {
+                let backend = try CredentialStore.write(legacyCredential.value, key: Keys.apiKey)
+                credentialPersistenceState = Self.persistenceState(for: backend)
+            } catch {
+                credentialPersistenceState = .failure(error.localizedDescription)
+            }
         }
+    }
+
+    func retrySavingCredential() {
+        persistCredential()
     }
 
     var connectionIsConfigured: Bool {
@@ -110,6 +149,33 @@ final class ModelSettingsStore: ObservableObject {
 
     private let defaults: UserDefaults
 
+    private func persistCredential() {
+        do {
+            let backend = try CredentialStore.write(apiKey, key: Keys.apiKey)
+            let storedValue = try CredentialStore.read(key: Keys.apiKey).value
+            guard storedValue == apiKey else {
+                credentialPersistenceState = .failure("Token 回读验证失败，请点击“保存”重试。")
+                return
+            }
+            credentialPersistenceState = Self.persistenceState(for: backend)
+        } catch {
+            credentialPersistenceState = .failure(error.localizedDescription)
+        }
+    }
+
+    private static func persistenceState(for result: StoredCredentialResult) -> CredentialPersistenceState {
+        guard !result.value.isEmpty else { return .missing }
+        return persistenceState(for: result.backend)
+    }
+
+    private static func persistenceState(for backend: CredentialStorageBackend?) -> CredentialPersistenceState {
+        switch backend {
+        case .keychain: .savedToKeychain
+        case .protectedFile: .savedToProtectedFile
+        case nil: .missing
+        }
+    }
+
     private func save(_ value: Any, key: String) {
         defaults.set(value, forKey: key)
     }
@@ -126,6 +192,20 @@ final class ModelSettingsStore: ObservableObject {
         let value = normalized.absoluteString
         if value.hasSuffix(suffix) { return normalized }
         return URL(string: "\(value)/\(suffix)")
+    }
+
+    private static func migrateSandboxedDefaultsIfNeeded(into defaults: UserDefaults) {
+        let legacyURL = FileManager.default.homeDirectoryForCurrentUser
+            .appending(path: "Library/Containers/com.minuteflow.app/Data/Library/Preferences/com.minuteflow.app.plist")
+        guard
+            let dictionary = NSDictionary(contentsOf: legacyURL) as? [String: Any]
+        else { return }
+
+        for (key, value) in dictionary where defaults.object(forKey: key) == nil {
+            if key.hasPrefix("models.") || key == "defaultAudioSource" {
+                defaults.set(value, forKey: key)
+            }
+        }
     }
 
     private enum Keys {
@@ -151,4 +231,3 @@ final class ModelSettingsStore: ObservableObject {
         static let summaryPrompt = "models.summary.prompt"
     }
 }
-
