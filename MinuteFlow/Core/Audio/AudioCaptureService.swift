@@ -1,7 +1,14 @@
+@preconcurrency import AVFoundation
 import Foundation
+
+struct CapturedAudioBuffer: @unchecked Sendable {
+    let buffer: AVAudioPCMBuffer
+    let source: TranscriptSource
+}
 
 protocol AudioCaptureService: AnyObject, Sendable {
     var onLevelUpdate: (@Sendable (Float) -> Void)? { get set }
+    var onAudioBuffer: (@Sendable (CapturedAudioBuffer) -> Void)? { get set }
     var onError: (@Sendable (Error) -> Void)? { get set }
     var displayName: String { get }
 

@@ -10,7 +10,8 @@ struct MeetingSession: Codable, Identifiable, Equatable, Sendable {
     var recordingStatus: RecordingStatus
     var systemAudioURL: URL?
     var microphoneAudioURL: URL?
+    var transcriptFileURL: URL?
+    var summaryFileURL: URL?
     let createdAt: Date
     var updatedAt: Date
 }
-

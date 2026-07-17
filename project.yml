@@ -12,7 +12,7 @@ settings:
     ENABLE_HARDENED_RUNTIME: YES
     GENERATE_INFOPLIST_FILE: NO
     CURRENT_PROJECT_VERSION: 1
-    MARKETING_VERSION: 0.1.0
+    MARKETING_VERSION: 0.4.0
 targets:
   MinuteFlow:
     type: application
@@ -30,6 +30,7 @@ targets:
       - sdk: ScreenCaptureKit.framework
       - sdk: CoreMedia.framework
       - sdk: CoreGraphics.framework
+      - sdk: Security.framework
   MinuteFlowTests:
     type: bundle.unit-test
     platform: macOS
@@ -49,4 +50,3 @@ schemes:
     test:
       targets:
         - MinuteFlowTests
-

@@ -13,11 +13,16 @@ final class RecordingCoordinator: ObservableObject {
     @Published private(set) var microphoneLevel: Float = 0
     @Published private(set) var currentSession: MeetingSession?
     @Published private(set) var recentSessions: [MeetingSession] = []
+    @Published private(set) var transcriptSegments: [TranscriptSegment] = []
+    @Published private(set) var transcriptionActivity = "未开始转写"
+    @Published private(set) var summaryMarkdown: String?
+    @Published private(set) var isGeneratingSummary = false
     @Published var meetingTitle = ""
     @Published var userMessage: String?
     @Published var permissionIssue: PermissionIssue?
 
     var microphoneName: String { microphoneService.displayName }
+    let modelSettings: ModelSettingsStore
     var isRecording: Bool { status == .recording }
     var isPaused: Bool { status == .paused }
     var canStart: Bool { !status.isActive }
@@ -28,22 +33,31 @@ final class RecordingCoordinator: ObservableObject {
     private let microphoneService: AudioCaptureService
     private let repository: MeetingRepository
     private let permissionManager: PermissionManaging
+    private let transcriptionService: RemoteRealtimeTranscriptionService
+    private let summaryClient: RemoteSummaryClient
     private var systemAudioStarted = false
     private var microphoneStarted = false
     private var timer: Timer?
     private var accumulatedDuration: TimeInterval = 0
     private var currentRunStartedAt: Date?
+    private var transcriptionRunning = false
 
     init(
         systemAudioService: AudioCaptureService,
         microphoneService: AudioCaptureService,
         repository: MeetingRepository,
-        permissionManager: PermissionManaging
+        permissionManager: PermissionManaging,
+        modelSettings: ModelSettingsStore = ModelSettingsStore(),
+        transcriptionService: RemoteRealtimeTranscriptionService = RemoteRealtimeTranscriptionService(),
+        summaryClient: RemoteSummaryClient = RemoteSummaryClient()
     ) {
         self.systemAudioService = systemAudioService
         self.microphoneService = microphoneService
         self.repository = repository
         self.permissionManager = permissionManager
+        self.modelSettings = modelSettings
+        self.transcriptionService = transcriptionService
+        self.summaryClient = summaryClient
 
         if
             let savedValue = UserDefaults.standard.string(forKey: Self.sourceDefaultsKey),
@@ -68,6 +82,10 @@ final class RecordingCoordinator: ObservableObject {
         accumulatedDuration = 0
         systemLevel = 0
         microphoneLevel = 0
+        transcriptSegments = []
+        summaryMarkdown = nil
+        transcriptionActivity = "准备转写…"
+        transcriptionRunning = false
         systemAudioStarted = false
         microphoneStarted = false
 
@@ -80,6 +98,8 @@ final class RecordingCoordinator: ObservableObject {
                 sourceSelection: sourceSelection
             )
             currentSession = session
+
+            startTranscriptionIfConfigured()
 
             if sourceSelection.systemAudioEnabled, let url = session.systemAudioURL {
                 if await permissionManager.requestPermission(for: .systemAudio) {
@@ -122,6 +142,10 @@ final class RecordingCoordinator: ObservableObject {
             }
 
             guard systemAudioStarted || microphoneStarted else {
+                if transcriptionRunning {
+                    _ = await transcriptionService.finish()
+                    transcriptionRunning = false
+                }
                 session.recordingStatus = .failed
                 session.updatedAt = Date()
                 try? repository.save(session)
@@ -144,6 +168,10 @@ final class RecordingCoordinator: ObservableObject {
             }
         } catch {
             await stopActiveServices()
+            if transcriptionRunning {
+                _ = await transcriptionService.finish()
+                transcriptionRunning = false
+            }
             status = .failed
             userMessage = "无法创建会议录音：\(error.localizedDescription)"
         }
@@ -180,17 +208,38 @@ final class RecordingCoordinator: ObservableObject {
 
         await stopActiveServices()
 
+        if transcriptionRunning {
+            transcriptionActivity = "正在完成剩余片段…"
+            let completed = await transcriptionService.finish()
+            for segment in completed where !transcriptSegments.contains(where: { $0.id == segment.id }) {
+                transcriptSegments.append(segment)
+            }
+            transcriptSegments.sort { $0.startTime < $1.startTime }
+            transcriptionRunning = false
+        }
+
         if var session = currentSession {
             session.endTime = Date()
             session.duration = elapsedTime
             session.recordingStatus = .completed
             session.updatedAt = Date()
             do {
+                if !transcriptSegments.isEmpty {
+                    session.transcriptFileURL = try repository.saveTranscript(
+                        transcriptSegments.sorted { $0.startTime < $1.startTime },
+                        sessionID: session.id
+                    )
+                }
                 try repository.save(session)
                 currentSession = session
                 status = .completed
-                userMessage = "录音已安全保存。"
+                userMessage = transcriptSegments.isEmpty
+                    ? "录音已安全保存；本次没有生成逐字稿。"
+                    : "录音和逐字稿已安全保存。"
                 reloadRecentSessions()
+                if modelSettings.automaticSummary && modelSettings.summaryIsConfigured {
+                    await generateSummary()
+                }
             } catch {
                 currentSession = session
                 status = .failed
@@ -212,6 +261,94 @@ final class RecordingCoordinator: ObservableObject {
         NSWorkspace.shared.activateFileViewerSelecting([directory])
     }
 
+    func selectSession(_ session: MeetingSession) {
+        guard !status.isActive else {
+            userMessage = "录音进行中，暂时不能切换会议。"
+            return
+        }
+        currentSession = session
+        status = session.recordingStatus
+        elapsedTime = session.duration
+        transcriptSegments = (try? repository.loadTranscript(sessionID: session.id)) ?? []
+        summaryMarkdown = try? repository.loadSummary(sessionID: session.id)
+        transcriptionActivity = transcriptSegments.isEmpty ? "尚无逐字稿" : "已载入逐字稿"
+    }
+
+    func prepareNewRecording() {
+        guard !status.isActive else {
+            userMessage = "当前录音仍在进行，请先停止并保存。"
+            return
+        }
+        currentSession = nil
+        meetingTitle = ""
+        transcriptSegments = []
+        summaryMarkdown = nil
+        elapsedTime = 0
+        status = .idle
+        transcriptionActivity = "未开始转写"
+        userMessage = nil
+    }
+
+    func deleteSession(_ session: MeetingSession) {
+        if status.isActive, currentSession?.id == session.id {
+            userMessage = "请先停止当前录音，再删除这条会议记录。"
+            return
+        }
+        do {
+            try repository.deleteSession(id: session.id)
+            if currentSession?.id == session.id {
+                currentSession = nil
+                transcriptSegments = []
+                summaryMarkdown = nil
+                elapsedTime = 0
+                status = .idle
+            }
+            reloadRecentSessions()
+            userMessage = "会议记录及其录音文件已删除。"
+        } catch {
+            userMessage = "删除失败：\(error.localizedDescription)"
+        }
+    }
+
+    func generateSummary() async {
+        guard !transcriptSegments.isEmpty else {
+            userMessage = "当前会议没有逐字稿，无法生成会议纪要。"
+            return
+        }
+        guard
+            modelSettings.summaryIsConfigured,
+            let endpoint = modelSettings.resolvedSummaryEndpoint
+        else {
+            userMessage = "请先在设置 → 会议总结中配置 MiMo、DeepSeek 或 GLM 模型。"
+            return
+        }
+        guard var session = currentSession else { return }
+
+        isGeneratingSummary = true
+        defer { isGeneratingSummary = false }
+        do {
+            let markdown = try await summaryClient.summarize(
+                title: session.title,
+                segments: transcriptSegments,
+                configuration: SummaryConfiguration(
+                    endpoint: endpoint,
+                    model: modelSettings.summaryModel,
+                    apiKey: modelSettings.summaryAPIKey,
+                    prompt: modelSettings.summaryPrompt
+                )
+            )
+            session.summaryFileURL = try repository.saveSummary(markdown, sessionID: session.id)
+            session.updatedAt = Date()
+            try repository.save(session)
+            currentSession = session
+            summaryMarkdown = markdown
+            reloadRecentSessions()
+            userMessage = "会议纪要已生成并保存在本地。"
+        } catch {
+            userMessage = "会议总结失败：\(error.localizedDescription)"
+        }
+    }
+
     func dismissMessage() {
         userMessage = nil
     }
@@ -223,6 +360,12 @@ final class RecordingCoordinator: ObservableObject {
         microphoneService.onLevelUpdate = { [weak self] level in
             Task { @MainActor [weak self] in self?.microphoneLevel = level }
         }
+        systemAudioService.onAudioBuffer = { [weak self] packet in
+            self?.transcriptionService.append(packet)
+        }
+        microphoneService.onAudioBuffer = { [weak self] packet in
+            self?.transcriptionService.append(packet)
+        }
         systemAudioService.onError = { [weak self] error in
             let message = error.localizedDescription
             Task { @MainActor [weak self] in
@@ -233,6 +376,24 @@ final class RecordingCoordinator: ObservableObject {
             let message = error.localizedDescription
             Task { @MainActor [weak self] in
                 self?.userMessage = "麦克风录制异常：\(message)\n系统声音录音会尽可能继续。"
+            }
+        }
+        transcriptionService.onSegment = { [weak self] segment in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.transcriptSegments.append(segment)
+                self.transcriptSegments.sort { $0.startTime < $1.startTime }
+                self.persistCurrentTranscript()
+            }
+        }
+        transcriptionService.onStatus = { [weak self] activity in
+            Task { @MainActor [weak self] in self?.transcriptionActivity = activity }
+        }
+        transcriptionService.onError = { [weak self] error in
+            let message = error.localizedDescription
+            Task { @MainActor [weak self] in
+                self?.transcriptionActivity = "转写异常，录音仍在继续"
+                self?.userMessage = "转写失败：\(message)\n录音仍在继续，可在设置中检查模型配置。"
             }
         }
     }
@@ -278,6 +439,56 @@ final class RecordingCoordinator: ObservableObject {
         recentSessions = (try? repository.loadRecentSessions()) ?? []
     }
 
+    private func startTranscriptionIfConfigured() {
+        guard modelSettings.sttProvider != .disabled else {
+            transcriptionActivity = "已关闭自动转写"
+            return
+        }
+        guard
+            modelSettings.sttIsConfigured,
+            let endpoint = modelSettings.resolvedSTTEndpoint
+        else {
+            transcriptionActivity = "等待配置语音识别模型"
+            userMessage = "录音会正常进行；请在设置 → 语音识别中填写 MiMo 或 GLM API Key 后启用自动转写。"
+            return
+        }
+
+        var sources = Set<TranscriptSource>()
+        if sourceSelection.systemAudioEnabled { sources.insert(.system) }
+        if sourceSelection.microphoneEnabled { sources.insert(.microphone) }
+        do {
+            try transcriptionService.start(
+                sources: sources,
+                configuration: ASRConfiguration(
+                    provider: modelSettings.sttProvider,
+                    endpoint: endpoint,
+                    model: modelSettings.resolvedSTTModel,
+                    apiKey: modelSettings.sttAPIKey,
+                    language: modelSettings.transcriptionLanguage
+                )
+            )
+            transcriptionRunning = true
+        } catch {
+            transcriptionActivity = "转写启动失败"
+            userMessage = "转写未能启动：\(error.localizedDescription)\n录音仍可正常进行。"
+        }
+    }
+
+    private func persistCurrentTranscript() {
+        guard var session = currentSession, !transcriptSegments.isEmpty else { return }
+        do {
+            session.transcriptFileURL = try repository.saveTranscript(
+                transcriptSegments,
+                sessionID: session.id
+            )
+            session.updatedAt = Date()
+            try repository.save(session)
+            currentSession = session
+        } catch {
+            userMessage = "逐字稿自动保存失败：\(error.localizedDescription)"
+        }
+    }
+
     private func resolvedMeetingTitle() -> String {
         let trimmed = meetingTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.isEmpty else { return trimmed }
@@ -291,4 +502,3 @@ final class RecordingCoordinator: ObservableObject {
         return formatter
     }()
 }
-

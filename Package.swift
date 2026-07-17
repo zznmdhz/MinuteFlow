@@ -16,7 +16,8 @@ let package = Package(
                 .linkedFramework("AVFoundation"),
                 .linkedFramework("ScreenCaptureKit"),
                 .linkedFramework("CoreMedia"),
-                .linkedFramework("CoreGraphics")
+                .linkedFramework("CoreGraphics"),
+                .linkedFramework("Security")
             ]
         ),
         .testTarget(

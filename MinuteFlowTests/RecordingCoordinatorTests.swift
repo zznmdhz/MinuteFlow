@@ -76,6 +76,7 @@ private enum TestError: Error {
 
 private final class MockAudioCaptureService: AudioCaptureService, @unchecked Sendable {
     var onLevelUpdate: (@Sendable (Float) -> Void)?
+    var onAudioBuffer: (@Sendable (CapturedAudioBuffer) -> Void)?
     var onError: (@Sendable (Error) -> Void)?
     let displayName: String
     var startError: Error?

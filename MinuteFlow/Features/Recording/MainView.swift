@@ -20,6 +20,7 @@ struct MainView: View {
 private struct SidebarView: View {
     @EnvironmentObject private var coordinator: RecordingCoordinator
     @Environment(\.openSettings) private var openSettings
+    @State private var sessionPendingDeletion: MeetingSession?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -45,14 +46,17 @@ private struct SidebarView: View {
             .padding(.top, 20)
             .padding(.bottom, 22)
 
-            Label("新建录音", systemImage: "record.circle")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
-                .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .padding(.horizontal, 12)
+            Button { coordinator.prepareNewRecording() } label: {
+                Label("新建录音", systemImage: "record.circle")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 12)
 
             Text("最近保存")
                 .font(.caption.weight(.semibold))
@@ -77,7 +81,12 @@ private struct SidebarView: View {
                 ScrollView {
                     LazyVStack(spacing: 4) {
                         ForEach(coordinator.recentSessions.prefix(12)) { session in
-                            RecentSessionRow(session: session)
+                            RecentSessionRow(
+                                session: session,
+                                selected: coordinator.currentSession?.id == session.id,
+                                onSelect: { coordinator.selectSession(session) },
+                                onDelete: { sessionPendingDeletion = session }
+                            )
                         }
                     }
                     .padding(.horizontal, 10)
@@ -97,34 +106,73 @@ private struct SidebarView: View {
             .padding(16)
         }
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+        .confirmationDialog(
+            "删除“\(sessionPendingDeletion?.title ?? "这条会议")”？",
+            isPresented: Binding(
+                get: { sessionPendingDeletion != nil },
+                set: { if !$0 { sessionPendingDeletion = nil } }
+            )
+        ) {
+            Button("删除录音、逐字稿和纪要", role: .destructive) {
+                if let sessionPendingDeletion {
+                    coordinator.deleteSession(sessionPendingDeletion)
+                }
+                sessionPendingDeletion = nil
+            }
+            Button("取消", role: .cancel) { sessionPendingDeletion = nil }
+        } message: {
+            Text("此操作会删除该会议目录中的全部本地文件，无法撤销。")
+        }
     }
 }
 
 private struct RecentSessionRow: View {
     let session: MeetingSession
+    let selected: Bool
+    let onSelect: () -> Void
+    let onDelete: () -> Void
 
     var body: some View {
-        HStack(spacing: 9) {
-            Image(systemName: session.recordingStatus == .completed ? "waveform.circle.fill" : "exclamationmark.circle")
-                .foregroundStyle(session.recordingStatus == .completed ? Color.accentColor : .orange)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(session.title)
-                    .font(.system(size: 12, weight: .medium))
-                    .lineLimit(1)
-                Text("\(session.startTime.formatted(date: .abbreviated, time: .shortened)) · \(DurationFormatter.string(from: session.duration))")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+        HStack(spacing: 4) {
+            Button(action: onSelect) {
+                HStack(spacing: 9) {
+                    Image(systemName: session.transcriptFileURL == nil ? "waveform.circle.fill" : "text.bubble.fill")
+                        .foregroundStyle(Color.accentColor)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(session.title)
+                            .font(.system(size: 12, weight: .medium))
+                            .lineLimit(1)
+                        Text("\(session.startTime.formatted(date: .abbreviated, time: .shortened)) · \(DurationFormatter.string(from: session.duration))")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
             }
-            Spacer(minLength: 0)
+            .buttonStyle(.plain)
+
+            Button(role: .destructive, action: onDelete) {
+                Image(systemName: "trash")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .help("删除这条会议")
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 7)
-        .contentShape(Rectangle())
+        .background(selected ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 8))
+        .contextMenu {
+            Button("删除会议", role: .destructive, action: onDelete)
+        }
     }
 }
 
 private struct RecorderView: View {
     @EnvironmentObject private var coordinator: RecordingCoordinator
+    @ObservedObject private var models = DependencyContainer.shared.modelSettings
 
     var body: some View {
         ScrollView {
@@ -141,11 +189,21 @@ private struct RecorderView: View {
 
                 recorderCard
                 sourcePanel
+                TranscriptPanel()
+                    .environmentObject(coordinator)
+
+                if coordinator.currentSession != nil,
+                   !coordinator.transcriptSegments.isEmpty || coordinator.summaryMarkdown != nil {
+                    SummaryPanel()
+                        .environmentObject(coordinator)
+                }
 
                 HStack(spacing: 6) {
-                    Image(systemName: "lock.shield.fill")
-                        .foregroundStyle(.green)
-                    Text("音频仅保存在此 Mac，不会上传到网络")
+                    Image(systemName: models.sttProvider == .disabled ? "lock.shield.fill" : "network")
+                        .foregroundStyle(models.sttProvider == .disabled ? .green : Color.accentColor)
+                    Text(models.sttProvider == .disabled
+                         ? "录音和文字仅保存在此 Mac"
+                         : "录音保存在本机；约 10 秒的短音频片段发送给 \(models.sttProvider.title)")
                         .foregroundStyle(.secondary)
                 }
                 .font(.caption)
@@ -321,6 +379,112 @@ private struct RecorderView: View {
     }
 }
 
+private struct TranscriptPanel: View {
+    @EnvironmentObject private var coordinator: RecordingCoordinator
+    @Environment(\.openSettings) private var openSettings
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label("实时逐字稿", systemImage: "text.bubble.fill")
+                    .font(.headline)
+                Spacer()
+                HStack(spacing: 6) {
+                    if coordinator.status.isActive {
+                        ProgressView().controlSize(.small)
+                    }
+                    Text(coordinator.transcriptionActivity)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if coordinator.transcriptSegments.isEmpty {
+                VStack(spacing: 9) {
+                    Image(systemName: "quote.bubble")
+                        .font(.title2)
+                        .foregroundStyle(.tertiary)
+                    Text(coordinator.status.isActive ? "第一段文字会在约 10 秒后出现" : "当前会议还没有逐字稿")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    if !coordinator.modelSettings.sttIsConfigured {
+                        Button("配置 MiMo / GLM 语音识别") { openSettings() }
+                            .buttonStyle(.link)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+            } else {
+                LazyVStack(alignment: .leading, spacing: 13) {
+                    ForEach(coordinator.transcriptSegments.suffix(40)) { segment in
+                        HStack(alignment: .top, spacing: 12) {
+                            Text(DurationFormatter.string(from: segment.startTime))
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                                .frame(width: 62, alignment: .leading)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(segment.source.title)
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(segment.source == .microphone ? .orange : Color.accentColor)
+                                Text(segment.text)
+                                    .font(.system(size: 13.5))
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(20)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+private struct SummaryPanel: View {
+    @EnvironmentObject private var coordinator: RecordingCoordinator
+    @Environment(\.openSettings) private var openSettings
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label("会议纪要", systemImage: "sparkles")
+                    .font(.headline)
+                Spacer()
+                if coordinator.isGeneratingSummary {
+                    ProgressView().controlSize(.small)
+                    Text("正在生成…").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Button(coordinator.summaryMarkdown == nil ? "生成纪要" : "重新生成") {
+                        Task { await coordinator.generateSummary() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+            }
+
+            if let summary = coordinator.summaryMarkdown {
+                Text(summary)
+                    .font(.system(size: 13.5))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if !coordinator.modelSettings.summaryIsConfigured {
+                VStack(spacing: 8) {
+                    Text("配置 MiMo、DeepSeek 或 GLM 后，可根据逐字稿生成结构化会议纪要。")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Button("打开会议总结设置") { openSettings() }
+                        .buttonStyle(.link)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+            }
+        }
+        .padding(20)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 16))
+    }
+}
+
 private struct SourceCard: View {
     let icon: String
     let title: String
@@ -427,4 +591,3 @@ private struct NoticeBanner: View {
         .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
     }
 }
-

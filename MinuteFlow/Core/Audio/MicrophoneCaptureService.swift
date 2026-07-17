@@ -3,6 +3,7 @@ import Foundation
 
 final class MicrophoneCaptureService: AudioCaptureService, @unchecked Sendable {
     var onLevelUpdate: (@Sendable (Float) -> Void)?
+    var onAudioBuffer: (@Sendable (CapturedAudioBuffer) -> Void)?
     var onError: (@Sendable (Error) -> Void)?
 
     var displayName: String {
@@ -76,6 +77,7 @@ final class MicrophoneCaptureService: AudioCaptureService, @unchecked Sendable {
         do {
             try activeWriter.write(buffer)
             onLevelUpdate?(AudioLevelMeter.normalizedLevel(for: buffer))
+            onAudioBuffer?(CapturedAudioBuffer(buffer: buffer, source: .microphone))
         } catch {
             onError?(error)
         }

@@ -24,6 +24,24 @@ final class MeetingRepositoryTests: XCTestCase {
         XCTAssertEqual(recent.first?.title, "录音测试")
         XCTAssertEqual(recent.first?.duration, 42)
         XCTAssertEqual(recent.first?.recordingStatus, .completed)
+
+        let segments = [
+            TranscriptSegment(
+                startTime: 0,
+                endTime: 5,
+                text: "这是测试逐字稿。",
+                source: .system,
+                isFinal: true
+            )
+        ]
+        _ = try repository.saveTranscript(segments, sessionID: session.id)
+        XCTAssertEqual(try repository.loadTranscript(sessionID: session.id), segments)
+
+        _ = try repository.saveSummary("# 测试纪要", sessionID: session.id)
+        XCTAssertEqual(try repository.loadSummary(sessionID: session.id), "# 测试纪要")
+
+        try repository.deleteSession(id: session.id)
+        XCTAssertTrue(try repository.loadRecentSessions().isEmpty)
     }
 }
 

@@ -5,6 +5,7 @@ import ScreenCaptureKit
 
 final class SystemAudioCaptureService: NSObject, AudioCaptureService, @unchecked Sendable {
     var onLevelUpdate: (@Sendable (Float) -> Void)?
+    var onAudioBuffer: (@Sendable (CapturedAudioBuffer) -> Void)?
     var onError: (@Sendable (Error) -> Void)?
     let displayName = "Mac 系统声音"
 
@@ -106,6 +107,7 @@ extension SystemAudioCaptureService: SCStreamOutput, SCStreamDelegate {
             let buffer = try sampleBuffer.makePCMBuffer()
             try activeWriter.write(buffer)
             onLevelUpdate?(AudioLevelMeter.normalizedLevel(for: buffer))
+            onAudioBuffer?(CapturedAudioBuffer(buffer: buffer, source: .system))
         } catch {
             onError?(error)
         }

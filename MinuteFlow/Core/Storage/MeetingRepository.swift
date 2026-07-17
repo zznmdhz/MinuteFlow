@@ -4,6 +4,11 @@ protocol MeetingRepository {
     func createSession(title: String, sourceSelection: AudioSourceSelection) throws -> MeetingSession
     func save(_ session: MeetingSession) throws
     func loadRecentSessions() throws -> [MeetingSession]
+    func deleteSession(id: UUID) throws
+    func saveTranscript(_ segments: [TranscriptSegment], sessionID: UUID) throws -> URL
+    func loadTranscript(sessionID: UUID) throws -> [TranscriptSegment]
+    func saveSummary(_ markdown: String, sessionID: UUID) throws -> URL
+    func loadSummary(sessionID: UUID) throws -> String?
     func sessionDirectory(for id: UUID) -> URL
 }
 
@@ -82,7 +87,59 @@ struct LocalMeetingRepository: MeetingRepository {
         .sorted { $0.startTime > $1.startTime }
     }
 
+    func deleteSession(id: UUID) throws {
+        let directory = sessionDirectory(for: id)
+        guard fileManager.fileExists(atPath: directory.path) else { return }
+        try fileManager.removeItem(at: directory)
+    }
+
+    func saveTranscript(_ segments: [TranscriptSegment], sessionID: UUID) throws -> URL {
+        let directory = sessionDirectory(for: sessionID)
+            .appending(path: "transcript", directoryHint: .isDirectory)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appending(path: "segments.json")
+        let data = try encoder.encode(segments)
+        try data.write(to: url, options: .atomic)
+
+        let markdown = segments.map { segment in
+            "### \(Self.timestamp(segment.startTime)) · \(segment.source.title)\n\n\(segment.text)"
+        }.joined(separator: "\n\n")
+        try markdown.write(
+            to: directory.appending(path: "transcript.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        return url
+    }
+
+    func loadTranscript(sessionID: UUID) throws -> [TranscriptSegment] {
+        let url = sessionDirectory(for: sessionID)
+            .appending(path: "transcript/segments.json")
+        guard fileManager.fileExists(atPath: url.path) else { return [] }
+        return try decoder.decode([TranscriptSegment].self, from: Data(contentsOf: url))
+    }
+
+    func saveSummary(_ markdown: String, sessionID: UUID) throws -> URL {
+        let directory = sessionDirectory(for: sessionID)
+            .appending(path: "summary", directoryHint: .isDirectory)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appending(path: "summary.md")
+        try markdown.write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
+
+    func loadSummary(sessionID: UUID) throws -> String? {
+        let url = sessionDirectory(for: sessionID).appending(path: "summary/summary.md")
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
     func sessionDirectory(for id: UUID) -> URL {
         rootDirectory.appending(path: id.uuidString, directoryHint: .isDirectory)
+    }
+
+    private static func timestamp(_ interval: TimeInterval) -> String {
+        let seconds = max(0, Int(interval))
+        return String(format: "%02d:%02d:%02d", seconds / 3_600, (seconds % 3_600) / 60, seconds % 60)
     }
 }
