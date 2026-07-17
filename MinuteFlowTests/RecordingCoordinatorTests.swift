@@ -68,6 +68,29 @@ final class RecordingCoordinatorTests: XCTestCase {
         XCTAssertTrue(coordinator.userMessage?.contains("另一路录音仍在继续") == true)
         await coordinator.stopRecording()
     }
+
+    func testAttemptsSystemCaptureWhenPermissionPreflightIsStale() async {
+        let root = FileManager.default.temporaryDirectory
+            .appending(path: "MinuteFlowCoordinatorStalePermission-\(UUID().uuidString)", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let system = MockAudioCaptureService(name: "系统声音")
+        let microphone = MockAudioCaptureService(name: "测试麦克风")
+        let coordinator = RecordingCoordinator(
+            systemAudioService: system,
+            microphoneService: microphone,
+            repository: LocalMeetingRepository(rootDirectory: root),
+            permissionManager: StaleSystemPermissionManager()
+        )
+        coordinator.sourceSelection = .system
+
+        await coordinator.startRecording()
+
+        XCTAssertEqual(system.startCount, 1)
+        XCTAssertEqual(coordinator.status, .recording)
+        XCTAssertNotNil(coordinator.currentSession?.systemAudioURL)
+        await coordinator.stopRecording()
+    }
 }
 
 private enum TestError: Error {
@@ -103,6 +126,12 @@ private final class MockAudioCaptureService: AudioCaptureService, @unchecked Sen
 
 private final class AllowingPermissionManager: PermissionManaging, @unchecked Sendable {
     func requestPermission(for kind: PermissionKind) async -> Bool { true }
-    func currentStatus(for kind: PermissionKind) -> PermissionAuthorizationState { .authorized }
+    func authorizationStatus(for kind: PermissionKind) async -> PermissionAuthorizationState { .authorized }
+    @MainActor func openSettings(for kind: PermissionKind) {}
+}
+
+private final class StaleSystemPermissionManager: PermissionManaging, @unchecked Sendable {
+    func requestPermission(for kind: PermissionKind) async -> Bool { false }
+    func authorizationStatus(for kind: PermissionKind) async -> PermissionAuthorizationState { .denied }
     @MainActor func openSettings(for kind: PermissionKind) {}
 }

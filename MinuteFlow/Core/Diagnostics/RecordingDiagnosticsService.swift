@@ -43,16 +43,13 @@ final class RecordingDiagnosticsService: ObservableObject {
         var systemStarted = false
         var microphoneStarted = false
 
-        if await permissionManager.requestPermission(for: .systemAudio) {
-            do {
-                try await systemService.start(outputURL: systemURL)
-                systemStarted = true
-                systemState = .testing("请播放一段电脑声音…")
-            } catch {
-                systemState = .failure(error.localizedDescription)
-            }
-        } else {
-            systemState = .failure("未获得屏幕与系统音频录制权限")
+        _ = await permissionManager.requestPermission(for: .systemAudio)
+        do {
+            try await systemService.start(outputURL: systemURL)
+            systemStarted = true
+            systemState = .testing("请播放一段电脑声音…")
+        } catch {
+            systemState = .failure("系统录音启动失败：\(error.localizedDescription)；若系统开关已打开，请完全退出并重新打开 MinuteFlow")
         }
 
         if await permissionManager.requestPermission(for: .microphone) {

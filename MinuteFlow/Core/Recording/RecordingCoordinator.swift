@@ -72,7 +72,7 @@ final class RecordingCoordinator: ObservableObject {
 
         configureCallbacks()
         reloadRecentSessions()
-        refreshPermissionStates()
+        Task { [weak self] in await self?.refreshPermissionStates() }
     }
 
     func startRecording() async {
@@ -105,21 +105,20 @@ final class RecordingCoordinator: ObservableObject {
             startTranscriptionIfConfigured()
 
             if sourceSelection.systemAudioEnabled, let url = session.systemAudioURL {
-                if await permissionManager.requestPermission(for: .systemAudio) {
-                    do {
-                        try await systemAudioService.start(outputURL: url)
-                        systemAudioStarted = true
-                    } catch {
-                        session.systemAudioURL = nil
-                        warnings.append("系统声音未能启动：\(error.localizedDescription)")
-                    }
-                } else {
+                // Do not gate ScreenCaptureKit on CGPreflightScreenCaptureAccess alone.
+                // The preflight value may remain stale even when System Settings is on.
+                _ = await permissionManager.requestPermission(for: .systemAudio)
+                do {
+                    try await systemAudioService.start(outputURL: url)
+                    systemAudioStarted = true
+                    systemAudioPermission = .authorized
+                } catch {
                     session.systemAudioURL = nil
                     permissionIssue = PermissionIssue(
                         kind: .systemAudio,
-                        detail: "用于捕获腾讯会议、飞书、Zoom 或浏览器播放的声音。开启后通常需要重新启动应用。"
+                        detail: "系统开关已经打开时，请完全退出 MinuteFlow 后重新打开；macOS 只会在新进程中启用该权限。"
                     )
-                    warnings.append("系统声音未录制：缺少屏幕与系统音频录制权限。")
+                    warnings.append("系统声音未能启动：\(error.localizedDescription)")
                 }
             }
 
@@ -144,7 +143,7 @@ final class RecordingCoordinator: ObservableObject {
                 }
             }
 
-            refreshPermissionStates()
+            await refreshPermissionStates()
 
             guard systemAudioStarted || microphoneStarted else {
                 if transcriptionRunning {
@@ -264,19 +263,19 @@ final class RecordingCoordinator: ObservableObject {
         permissionManager.openSettings(for: kind)
     }
 
-    func refreshPermissionStates() {
-        microphonePermission = permissionManager.currentStatus(for: .microphone)
-        systemAudioPermission = permissionManager.currentStatus(for: .systemAudio)
+    func refreshPermissionStates() async {
+        microphonePermission = await permissionManager.authorizationStatus(for: .microphone)
+        systemAudioPermission = await permissionManager.authorizationStatus(for: .systemAudio)
     }
 
     func requestPermission(_ kind: PermissionKind) async {
         _ = await permissionManager.requestPermission(for: kind)
-        refreshPermissionStates()
-        if permissionManager.currentStatus(for: kind) != .authorized {
+        await refreshPermissionStates()
+        if await permissionManager.authorizationStatus(for: kind) != .authorized {
             permissionIssue = PermissionIssue(
                 kind: kind,
                 detail: kind == .systemAudio
-                    ? "开启后通常需要重新启动 MinuteFlow，系统才会更新捕获权限。"
+                    ? "开启后必须完全退出并重新打开 MinuteFlow，macOS 才会让当前应用使用录屏与系统音频权限。"
                     : "用于录制你的发言；开启后可以立即重新测试。"
             )
         }

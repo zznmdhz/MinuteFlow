@@ -2,6 +2,7 @@ import AVFoundation
 import AppKit
 import CoreGraphics
 import Foundation
+import ScreenCaptureKit
 
 enum PermissionKind: String, Sendable {
     case microphone
@@ -50,23 +51,36 @@ struct PermissionIssue: Identifiable, Equatable, Sendable {
 
 protocol PermissionManaging: AnyObject, Sendable {
     func requestPermission(for kind: PermissionKind) async -> Bool
-    func currentStatus(for kind: PermissionKind) -> PermissionAuthorizationState
+    func authorizationStatus(for kind: PermissionKind) async -> PermissionAuthorizationState
     @MainActor func openSettings(for kind: PermissionKind)
 }
 
 final class PermissionManager: PermissionManaging, @unchecked Sendable {
-    func currentStatus(for kind: PermissionKind) -> PermissionAuthorizationState {
+    func authorizationStatus(for kind: PermissionKind) async -> PermissionAuthorizationState {
         switch kind {
         case .microphone:
             switch AVCaptureDevice.authorizationStatus(for: .audio) {
-            case .authorized: .authorized
-            case .notDetermined: .notDetermined
-            case .denied: .denied
-            case .restricted: .restricted
-            @unknown default: .denied
+            case .authorized: return .authorized
+            case .notDetermined: return .notDetermined
+            case .denied: return .denied
+            case .restricted: return .restricted
+            @unknown default: return .denied
             }
         case .systemAudio:
-            CGPreflightScreenCaptureAccess() ? .authorized : .denied
+            if CGPreflightScreenCaptureAccess() { return .authorized }
+
+            // Core Graphics can report a stale false value after the user has enabled
+            // Screen Recording. Probe the same ScreenCaptureKit API used by recording
+            // so the UI reflects whether this process can actually capture.
+            do {
+                let content = try await SCShareableContent.excludingDesktopWindows(
+                    false,
+                    onScreenWindowsOnly: false
+                )
+                return content.displays.isEmpty ? .denied : .authorized
+            } catch {
+                return .denied
+            }
         }
     }
 
@@ -84,8 +98,10 @@ final class PermissionManager: PermissionManaging, @unchecked Sendable {
                 return false
             }
         case .systemAudio:
-            if CGPreflightScreenCaptureAccess() { return true }
-            return CGRequestScreenCaptureAccess()
+            if await authorizationStatus(for: .systemAudio) == .authorized { return true }
+            guard CGRequestScreenCaptureAccess() else { return false }
+            try? await Task.sleep(for: .milliseconds(300))
+            return await authorizationStatus(for: .systemAudio) == .authorized
         }
     }
 

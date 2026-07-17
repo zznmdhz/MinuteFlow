@@ -11,14 +11,15 @@ final class DependencyContainer {
 
     private init() {
         let settings = ModelSettingsStore()
+        let permissionManager = PermissionManager()
         modelSettings = settings
         aiDiagnostics = AIConnectionDiagnostics()
-        recordingDiagnostics = RecordingDiagnosticsService()
+        recordingDiagnostics = RecordingDiagnosticsService(permissionManager: permissionManager)
         recordingCoordinator = RecordingCoordinator(
             systemAudioService: SystemAudioCaptureService(),
             microphoneService: MicrophoneCaptureService(),
             repository: LocalMeetingRepository(),
-            permissionManager: PermissionManager(),
+            permissionManager: permissionManager,
             modelSettings: settings
         )
     }

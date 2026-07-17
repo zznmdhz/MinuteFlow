@@ -18,7 +18,7 @@ struct SettingsView: View {
                 .tabItem { Label("隐私", systemImage: "hand.raised") }
         }
         .frame(width: 700, height: 610)
-        .task { coordinator.refreshPermissionStates() }
+        .task { await coordinator.refreshPermissionStates() }
     }
 
     private var recordingSettings: some View {
@@ -145,6 +145,11 @@ struct SettingsView: View {
     private var diagnosticsSettings: some View {
         Form {
             Section("权限状态") {
+                LabeledContent("当前运行的应用") {
+                    Text(Bundle.main.bundleURL.lastPathComponent)
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                }
                 PermissionRow(
                     title: "麦克风",
                     detail: "用于记录你的发言",
@@ -154,12 +159,17 @@ struct SettingsView: View {
                 )
                 PermissionRow(
                     title: "屏幕与系统音频",
-                    detail: "只捕获系统声音，不保存屏幕画面",
+                    detail: "只捕获系统声音；打开系统开关后必须完全退出并重新打开本应用",
                     state: coordinator.systemAudioPermission,
                     request: { Task { await coordinator.requestPermission(.systemAudio) } },
                     openSettings: { coordinator.openPermissionSettings(.systemAudio) }
                 )
-                Button("刷新权限状态") { coordinator.refreshPermissionStates() }
+                HStack {
+                    Button("实际检测权限") {
+                        Task { await coordinator.refreshPermissionStates() }
+                    }
+                    Button("完全退出 MinuteFlow") { NSApplication.shared.terminate(nil) }
+                }
             }
 
             Section("五秒录音自检") {
@@ -173,7 +183,7 @@ struct SettingsView: View {
                     Button {
                         Task {
                             await recordingDiagnostics.run()
-                            coordinator.refreshPermissionStates()
+                            await coordinator.refreshPermissionStates()
                         }
                     } label: {
                         if recordingDiagnostics.isRunning {
