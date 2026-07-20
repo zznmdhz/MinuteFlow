@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 enum CredentialStorageBackend: Equatable, Sendable {
@@ -25,9 +26,7 @@ enum CredentialStore {
         guard FileManager.default.fileExists(atPath: url.path) else {
             return StoredCredentialResult(value: "", backend: nil)
         }
-        let data = try Data(contentsOf: url)
-        let record = try JSONDecoder().decode(ProtectedCredentialRecord.self, from: data)
-        return StoredCredentialResult(value: record.value, backend: .protectedFile)
+        return StoredCredentialResult(value: try readProtectedFile(from: url), backend: .protectedFile)
     }
 
     @discardableResult
@@ -35,7 +34,8 @@ enum CredentialStore {
         _ value: String,
         key: String,
         keychainService: String = "com.minuteflow.models",
-        fallbackDirectory: URL = defaultFallbackDirectory
+        fallbackDirectory: URL = defaultFallbackDirectory,
+        allowProtectedFileFallback: Bool = false
     ) throws -> CredentialStorageBackend? {
         let fallbackURL = fallbackURL(for: key, directory: fallbackDirectory)
 
@@ -56,6 +56,7 @@ enum CredentialStore {
             }
             return .keychain
         } catch {
+            guard allowProtectedFileFallback else { throw error }
             try writeProtectedFile(value, to: fallbackURL, directory: fallbackDirectory)
             let verified = try readProtectedFile(from: fallbackURL)
             guard verified == value else { throw CredentialStoreError.verificationFailed }
@@ -76,14 +77,30 @@ enum CredentialStore {
             attributes: [.posixPermissions: 0o700]
         )
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
-        let data = try JSONEncoder().encode(ProtectedCredentialRecord(value: value))
+        let plaintext = Data(value.utf8)
+        let sealedBox = try AES.GCM.seal(plaintext, using: fallbackEncryptionKey)
+        guard let combined = sealedBox.combined else { throw CredentialStoreError.encryptionFailed }
+        let data = try JSONEncoder().encode(ProtectedCredentialRecord(sealedData: combined))
         try data.write(to: url, options: [.atomic, .completeFileProtection])
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 
     private static func readProtectedFile(from url: URL) throws -> String {
         let data = try Data(contentsOf: url)
-        return try JSONDecoder().decode(ProtectedCredentialRecord.self, from: data).value
+        if let record = try? JSONDecoder().decode(ProtectedCredentialRecord.self, from: data) {
+            let sealedBox = try AES.GCM.SealedBox(combined: record.sealedData)
+            let plaintext = try AES.GCM.open(sealedBox, using: fallbackEncryptionKey)
+            guard let value = String(data: plaintext, encoding: .utf8) else {
+                throw CredentialStoreError.invalidCredentialData
+            }
+            return value
+        }
+
+        // Migrate the v1 fallback written by earlier preview builds. The old value is
+        // read once and immediately replaced with an encrypted v2 record.
+        let legacy = try JSONDecoder().decode(LegacyProtectedCredentialRecord.self, from: data)
+        try writeProtectedFile(legacy.value, to: url, directory: url.deletingLastPathComponent())
+        return legacy.value
     }
 
     private static func fallbackURL(for key: String, directory: URL) -> URL {
@@ -92,22 +109,39 @@ enum CredentialStore {
         }
         return directory.appending(path: "\(String(safeKey)).credential")
     }
+
+    private static var fallbackEncryptionKey: SymmetricKey {
+        let userID = getuid()
+        let context = "MinuteFlow.Credential.v2|\(userID)|\(FileManager.default.homeDirectoryForCurrentUser.path)|com.minuteflow.app"
+        return SymmetricKey(data: SHA256.hash(data: Data(context.utf8)))
+    }
 }
 
 private struct ProtectedCredentialRecord: Codable {
     let version: Int
-    let value: String
+    let sealedData: Data
 
-    init(value: String) {
-        version = 1
-        self.value = value
+    init(sealedData: Data) {
+        version = 2
+        self.sealedData = sealedData
     }
+}
+
+private struct LegacyProtectedCredentialRecord: Codable {
+    let version: Int
+    let value: String
 }
 
 private enum CredentialStoreError: LocalizedError {
     case verificationFailed
+    case encryptionFailed
+    case invalidCredentialData
 
     var errorDescription: String? {
-        "凭据保存后无法回读验证。"
+        switch self {
+        case .verificationFailed: "凭据保存后无法回读验证。"
+        case .encryptionFailed: "无法加密本机凭据。"
+        case .invalidCredentialData: "本机凭据内容已损坏。"
+        }
     }
 }

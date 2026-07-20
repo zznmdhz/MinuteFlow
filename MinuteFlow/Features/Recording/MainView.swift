@@ -80,7 +80,7 @@ private struct SidebarView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 4) {
-                        ForEach(coordinator.recentSessions.prefix(12)) { session in
+                        ForEach(coordinator.recentSessions) { session in
                             RecentSessionRow(
                                 session: session,
                                 selected: coordinator.currentSession?.id == session.id,
@@ -497,7 +497,7 @@ private struct TranscriptPanel: View {
                 .padding(.vertical, 24)
             } else {
                 LazyVStack(alignment: .leading, spacing: 13) {
-                    ForEach(coordinator.transcriptSegments.suffix(40)) { segment in
+                    ForEach(coordinator.transcriptSegments) { segment in
                         HStack(alignment: .top, spacing: 12) {
                             Text(DurationFormatter.string(from: segment.startTime))
                                 .font(.caption.monospacedDigit())

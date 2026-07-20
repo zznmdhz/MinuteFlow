@@ -15,6 +15,8 @@ enum ASRTransport: String, Sendable {
 
 enum CredentialPersistenceState: Equatable, Sendable {
     case missing
+    case unsaved
+    case fallbackAvailable(String)
     case savedToKeychain
     case savedToProtectedFile
     case failure(String)
@@ -22,6 +24,8 @@ enum CredentialPersistenceState: Equatable, Sendable {
     var message: String {
         switch self {
         case .missing: "尚未填写 Token"
+        case .unsaved: "Token 已修改，点击“保存”后才会生效"
+        case .fallbackAvailable(let message): "钥匙串保存失败：\(message)；尚未写入本机文件"
         case .savedToKeychain: "已安全保存到 macOS 钥匙串"
         case .savedToProtectedFile: "系统钥匙串不可用；已保存到仅当前用户可读的本机保护文件"
         case .failure(let message): message
@@ -33,7 +37,13 @@ enum CredentialPersistenceState: Equatable, Sendable {
 final class ModelSettingsStore: ObservableObject {
     @Published var connectionName: String { didSet { save(connectionName, key: Keys.connectionName) } }
     @Published var baseURL: String { didSet { save(baseURL, key: Keys.baseURL) } }
-    @Published var apiKey: String { didSet { persistCredential() } }
+    @Published var apiKey: String {
+        didSet {
+            if apiKey != persistedAPIKey {
+                credentialPersistenceState = apiKey.isEmpty && persistedAPIKey.isEmpty ? .missing : .unsaved
+            }
+        }
+    }
     @Published private(set) var credentialPersistenceState: CredentialPersistenceState
     @Published var asrEnabled: Bool { didSet { save(asrEnabled, key: Keys.asrEnabled) } }
     @Published var asrModel: String { didSet { save(asrModel, key: Keys.asrModel) } }
@@ -45,8 +55,12 @@ final class ModelSettingsStore: ObservableObject {
     @Published var automaticSummary: Bool { didSet { save(automaticSummary, key: Keys.automaticSummary) } }
     @Published var summaryPrompt: String { didSet { save(summaryPrompt, key: Keys.summaryPrompt) } }
 
-    init(defaults: UserDefaults = .standard) {
+    init(
+        defaults: UserDefaults = .standard,
+        credentialStore: CredentialStoreAdapter = .live
+    ) {
         self.defaults = defaults
+        self.credentialStore = credentialStore
         Self.migrateSandboxedDefaultsIfNeeded(into: defaults)
 
         let migratedBaseURL = defaults.string(forKey: LegacyKeys.sttBaseURL)
@@ -58,15 +72,18 @@ final class ModelSettingsStore: ObservableObject {
         var legacyCredential = StoredCredentialResult(value: "", backend: nil)
         var credentialReadError: Error?
         do {
-            currentCredential = try CredentialStore.read(key: Keys.apiKey)
-            legacyCredential = try CredentialStore.read(key: LegacyKeys.sttAPIKey)
+            currentCredential = try credentialStore.read(Keys.apiKey)
+            legacyCredential = try credentialStore.read(LegacyKeys.sttAPIKey)
         } catch {
             credentialReadError = error
         }
 
         let resolvedCredential = currentCredential.value.isEmpty ? legacyCredential : currentCredential
         let resolvedKey = resolvedCredential.value
-        apiKey = resolvedKey
+        // Never repopulate the editable field with the saved secret. Runtime calls
+        // use persistedAPIKey; the field is only for replacing it explicitly.
+        apiKey = ""
+        persistedAPIKey = resolvedKey
         credentialPersistenceState = credentialReadError.map { .failure($0.localizedDescription) }
             ?? Self.persistenceState(for: resolvedCredential)
 
@@ -90,7 +107,7 @@ final class ModelSettingsStore: ObservableObject {
 
         if credentialReadError == nil, currentCredential.value.isEmpty, !legacyCredential.value.isEmpty {
             do {
-                let backend = try CredentialStore.write(legacyCredential.value, key: Keys.apiKey)
+                let backend = try credentialStore.write(legacyCredential.value, Keys.apiKey, false)
                 credentialPersistenceState = Self.persistenceState(for: backend)
             } catch {
                 credentialPersistenceState = .failure(error.localizedDescription)
@@ -99,11 +116,28 @@ final class ModelSettingsStore: ObservableObject {
     }
 
     func retrySavingCredential() {
-        persistCredential()
+        guard !apiKey.isEmpty else { return }
+        persistCredential(allowProtectedFileFallback: false)
+    }
+
+    func saveCredentialUsingProtectedFile() {
+        guard !apiKey.isEmpty else { return }
+        persistCredential(allowProtectedFileFallback: true)
+    }
+
+    func clearSavedCredential() {
+        do {
+            _ = try credentialStore.write("", Keys.apiKey, false)
+            persistedAPIKey = ""
+            apiKey = ""
+            credentialPersistenceState = .missing
+        } catch {
+            credentialPersistenceState = .failure(error.localizedDescription)
+        }
     }
 
     var connectionIsConfigured: Bool {
-        resolvedBaseURL != nil && !apiKey.isEmpty
+        resolvedBaseURL != nil && !persistedAPIKey.isEmpty
     }
 
     var asrIsConfigured: Bool {
@@ -122,7 +156,9 @@ final class ModelSettingsStore: ObservableObject {
         guard let host = resolvedBaseURL?.host?.lowercased() else {
             return .openAIAudioTranscription
         }
-        return host.contains("xiaomimimo.com") ? .miMoChatAudio : .openAIAudioTranscription
+        return (host == "xiaomimimo.com" || host.hasSuffix(".xiaomimimo.com"))
+            ? .miMoChatAudio
+            : .openAIAudioTranscription
     }
 
     var resolvedASREndpoint: URL? {
@@ -148,18 +184,25 @@ final class ModelSettingsStore: ObservableObject {
     """
 
     private let defaults: UserDefaults
+    private let credentialStore: CredentialStoreAdapter
+    private var persistedAPIKey = ""
 
-    private func persistCredential() {
+    var activeAPIKey: String { persistedAPIKey }
+
+    private func persistCredential(allowProtectedFileFallback: Bool) {
         do {
-            let backend = try CredentialStore.write(apiKey, key: Keys.apiKey)
-            let storedValue = try CredentialStore.read(key: Keys.apiKey).value
+            let backend = try credentialStore.write(apiKey, Keys.apiKey, allowProtectedFileFallback)
+            let storedValue = try credentialStore.read(Keys.apiKey).value
             guard storedValue == apiKey else {
                 credentialPersistenceState = .failure("Token 回读验证失败，请点击“保存”重试。")
                 return
             }
+            persistedAPIKey = storedValue
             credentialPersistenceState = Self.persistenceState(for: backend)
         } catch {
-            credentialPersistenceState = .failure(error.localizedDescription)
+            credentialPersistenceState = allowProtectedFileFallback
+                ? .failure(error.localizedDescription)
+                : .fallbackAvailable(String(error.localizedDescription.prefix(160)))
         }
     }
 
@@ -230,4 +273,14 @@ final class ModelSettingsStore: ObservableObject {
         static let summaryModel = "models.summary.model"
         static let summaryPrompt = "models.summary.prompt"
     }
+}
+
+struct CredentialStoreAdapter: Sendable {
+    let read: @Sendable (String) throws -> StoredCredentialResult
+    let write: @Sendable (String, String, Bool) throws -> CredentialStorageBackend?
+
+    static let live = CredentialStoreAdapter(
+        read: { try CredentialStore.read(key: $0) },
+        write: { try CredentialStore.write($0, key: $1, allowProtectedFileFallback: $2) }
+    )
 }

@@ -91,7 +91,14 @@ struct LocalMeetingRepository: MeetingRepository {
         return directories.compactMap { directory in
             let metadataURL = directory.appending(path: "metadata.json")
             guard let data = try? Data(contentsOf: metadataURL) else { return nil }
-            return try? decoder.decode(MeetingSession.self, from: data)
+            guard var session = try? decoder.decode(MeetingSession.self, from: data) else { return nil }
+            if session.recordingStatus.isActive {
+                session.recordingStatus = .interrupted
+                session.endTime = session.endTime ?? session.updatedAt
+                session.updatedAt = Date()
+                try? save(session)
+            }
+            return session
         }
         .sorted { $0.startTime > $1.startTime }
     }

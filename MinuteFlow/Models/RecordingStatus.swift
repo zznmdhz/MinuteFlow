@@ -7,6 +7,7 @@ enum RecordingStatus: String, Codable, Sendable {
     case paused
     case saving
     case completed
+    case interrupted
     case failed
 
     var title: String {
@@ -17,6 +18,7 @@ enum RecordingStatus: String, Codable, Sendable {
         case .paused: "已暂停"
         case .saving: "正在保存"
         case .completed: "已完成"
+        case .interrupted: "已从异常退出中恢复"
         case .failed: "录音异常"
         }
     }
@@ -28,4 +30,3 @@ enum RecordingStatus: String, Codable, Sendable {
         }
     }
 }
-

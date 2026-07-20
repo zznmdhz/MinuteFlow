@@ -59,7 +59,7 @@ final class AIConnectionDiagnostics: ObservableObject {
                         transport: settings.detectedASRTransport,
                         endpoint: asrEndpoint,
                         model: settings.asrModel,
-                        apiKey: settings.apiKey,
+                        apiKey: settings.activeAPIKey,
                         language: settings.transcriptionLanguage
                     )
                 )
@@ -95,7 +95,7 @@ final class AIConnectionDiagnostics: ObservableObject {
                     configuration: SummaryConfiguration(
                         endpoint: summaryEndpoint,
                         model: settings.summaryModel,
-                        apiKey: settings.apiKey,
+                        apiKey: settings.activeAPIKey,
                         prompt: "只回复：总结模型连接成功"
                     )
                 )
@@ -115,4 +115,3 @@ final class AIConnectionDiagnostics: ObservableObject {
         return String(format: "%.1f 秒", seconds)
     }
 }
-

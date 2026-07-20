@@ -18,7 +18,6 @@ struct SettingsView: View {
                 .tabItem { Label("隐私", systemImage: "hand.raised") }
         }
         .frame(width: 700, height: 610)
-        .task { await coordinator.refreshPermissionStates() }
     }
 
     private var recordingSettings: some View {
@@ -49,9 +48,20 @@ struct SettingsView: View {
                 HStack {
                     SecureField("API Key / Token", text: $models.apiKey)
                     Button("保存") { models.retrySavingCredential() }
-                        .disabled(models.apiKey.isEmpty)
+                        .disabled(models.credentialPersistenceState != .unsaved || models.apiKey.isEmpty)
+                    if !models.activeAPIKey.isEmpty {
+                        Button("删除", role: .destructive) { models.clearSavedCredential() }
+                    }
                 }
                 CredentialPersistenceRow(state: models.credentialPersistenceState)
+                if case .fallbackAvailable = models.credentialPersistenceState {
+                    Button("改用本机加密文件保存") {
+                        models.saveCredentialUsingProtectedFile()
+                    }
+                    Text("此方式需要你明确选择：文件仅限当前用户读取并使用 AES-GCM 加密，但密钥隔离强度低于 macOS 钥匙串。")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
                 LabeledContent("已识别协议", value: models.detectedASRTransport.title)
             }
 
@@ -155,6 +165,19 @@ struct SettingsView: View {
                         .font(.caption.monospaced())
                         .textSelection(.enabled)
                 }
+                LabeledContent("安装位置") {
+                    Text(Bundle.main.bundleURL.path == "/Applications/MinuteFlow.app"
+                         ? "正确：/Applications/MinuteFlow.app"
+                         : "请将本版本固定放到 /Applications/MinuteFlow.app")
+                        .font(.caption)
+                        .foregroundStyle(Bundle.main.bundleURL.path == "/Applications/MinuteFlow.app" ? .green : .orange)
+                        .textSelection(.enabled)
+                }
+                LabeledContent("版本与标识") {
+                    Text("\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "开发版") · com.minuteflow.app")
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                }
                 PermissionRow(
                     title: "麦克风",
                     detail: "用于记录你的发言",
@@ -170,11 +193,14 @@ struct SettingsView: View {
                     openSettings: { coordinator.openPermissionSettings(.systemAudio) }
                 )
                 HStack {
-                    Button("实际检测权限") {
-                        Task { await coordinator.refreshPermissionStates() }
+                    Button("主动验证权限") {
+                        Task { await coordinator.verifyPermissionStates() }
                     }
                     Button("完全退出 MinuteFlow") { NSApplication.shared.terminate(nil) }
                 }
+                Text("打开设置窗口不会申请权限。只有开始系统声录音、运行五秒自检或点击“主动验证权限”时，macOS 才可能显示授权提示。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("五秒录音自检") {
@@ -188,7 +214,7 @@ struct SettingsView: View {
                     Button {
                         Task {
                             await recordingDiagnostics.run()
-                            await coordinator.refreshPermissionStates()
+                            await coordinator.verifyPermissionStates()
                         }
                     } label: {
                         if recordingDiagnostics.isRunning {
@@ -224,7 +250,7 @@ struct SettingsView: View {
                 }
             }
             Section {
-                Label("优先保存到 macOS 钥匙串；钥匙串不可用时保存到权限为 600 的本机保护文件。不会写入会议文件或日志。", systemImage: "key.fill")
+                Label("默认只保存到 macOS 钥匙串。若钥匙串失败，不会自动写文件；你可在明确的安全提示后主动选择本机 AES-GCM 加密文件。Token 不会写入会议文件或日志。", systemImage: "key.fill")
                     .foregroundStyle(.secondary)
             }
         }
@@ -245,6 +271,8 @@ private struct CredentialPersistenceRow: View {
     private var icon: String {
         switch state {
         case .missing: "key"
+        case .unsaved: "pencil.circle.fill"
+        case .fallbackAvailable: "exclamationmark.triangle.fill"
         case .savedToKeychain, .savedToProtectedFile: "checkmark.circle.fill"
         case .failure: "xmark.circle.fill"
         }
@@ -253,6 +281,8 @@ private struct CredentialPersistenceRow: View {
     private var color: Color {
         switch state {
         case .missing: .secondary
+        case .unsaved: .orange
+        case .fallbackAvailable: .orange
         case .savedToKeychain, .savedToProtectedFile: .green
         case .failure: .red
         }

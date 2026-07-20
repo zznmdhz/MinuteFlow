@@ -36,13 +36,15 @@ final class RecordingCoordinator: ObservableObject {
     private let repository: MeetingRepository
     private let permissionManager: PermissionManaging
     private let transcriptionService: RemoteRealtimeTranscriptionService
-    private let summaryClient: RemoteSummaryClient
+    private let summaryClient: any SummaryClient
     private var systemAudioStarted = false
     private var microphoneStarted = false
     private var timer: Timer?
     private var accumulatedDuration: TimeInterval = 0
     private var currentRunStartedAt: Date?
     private var transcriptionRunning = false
+    private var summarySessionID: UUID?
+    private var transcriptSaveTask: Task<Void, Never>?
 
     init(
         systemAudioService: AudioCaptureService,
@@ -51,7 +53,7 @@ final class RecordingCoordinator: ObservableObject {
         permissionManager: PermissionManaging,
         modelSettings: ModelSettingsStore = ModelSettingsStore(),
         transcriptionService: RemoteRealtimeTranscriptionService = RemoteRealtimeTranscriptionService(),
-        summaryClient: RemoteSummaryClient = RemoteSummaryClient()
+        summaryClient: any SummaryClient = RemoteSummaryClient()
     ) {
         self.systemAudioService = systemAudioService
         self.microphoneService = microphoneService
@@ -72,7 +74,7 @@ final class RecordingCoordinator: ObservableObject {
 
         configureCallbacks()
         reloadRecentSessions()
-        Task { [weak self] in await self?.refreshPermissionStates() }
+        refreshPermissionStates()
     }
 
     func startRecording() async {
@@ -102,48 +104,67 @@ final class RecordingCoordinator: ObservableObject {
             )
             currentSession = session
 
-            startTranscriptionIfConfigured()
-
-            if sourceSelection.systemAudioEnabled, let url = session.systemAudioURL {
-                // Do not gate ScreenCaptureKit on CGPreflightScreenCaptureAccess alone.
-                // The preflight value may remain stale even when System Settings is on.
-                _ = await permissionManager.requestPermission(for: .systemAudio)
-                do {
-                    try await systemAudioService.start(outputURL: url)
-                    systemAudioStarted = true
-                    systemAudioPermission = .authorized
-                } catch {
-                    session.systemAudioURL = nil
-                    permissionIssue = PermissionIssue(
-                        kind: .systemAudio,
-                        detail: "系统开关已经打开时，请完全退出 MinuteFlow 后重新打开；macOS 只会在新进程中启用该权限。"
-                    )
-                    warnings.append("系统声音未能启动：\(error.localizedDescription)")
-                }
-            }
-
-            if sourceSelection.microphoneEnabled, let url = session.microphoneAudioURL {
-                if await permissionManager.requestPermission(for: .microphone) {
-                    do {
-                        try await microphoneService.start(outputURL: url)
-                        microphoneStarted = true
-                    } catch {
-                        session.microphoneAudioURL = nil
-                        warnings.append("麦克风未能启动：\(error.localizedDescription)")
-                    }
-                } else {
+            // Resolve all potentially interactive permission prompts before either
+            // recorder starts. This prevents one source from running for several
+            // seconds while the user is still answering the other source's prompt.
+            var microphoneAllowed = true
+            if sourceSelection.microphoneEnabled {
+                microphoneAllowed = await permissionManager.requestPermission(for: .microphone)
+                microphonePermission = microphoneAllowed ? .authorized : .denied
+                if !microphoneAllowed {
                     session.microphoneAudioURL = nil
-                    if permissionIssue == nil {
-                        permissionIssue = PermissionIssue(
-                            kind: .microphone,
-                            detail: "用于单独录制你在会议中的发言。开启后重新开始录音即可。"
-                        )
-                    }
+                    permissionIssue = PermissionIssue(
+                        kind: .microphone,
+                        detail: "用于单独录制你在会议中的发言。开启后重新开始录音即可。"
+                    )
                     warnings.append("麦克风未录制：缺少麦克风权限。")
                 }
             }
 
-            await refreshPermissionStates()
+            startTranscriptionIfConfigured()
+
+            if sourceSelection.systemAudioEnabled, let url = session.systemAudioURL {
+                let passiveStatus = permissionManager.authorizationStatus(for: .systemAudio)
+                if passiveStatus == .authorized {
+                    do {
+                        try await systemAudioService.start(outputURL: url)
+                        systemAudioStarted = true
+                        systemAudioPermission = .authorized
+                    } catch {
+                        session.systemAudioURL = nil
+                        let failure = SystemAudioFailure(error: error)
+                        if failure.isPermissionRelated {
+                            systemAudioPermission = .denied
+                            permissionIssue = PermissionIssue(kind: .systemAudio, detail: failure.recoverySuggestion)
+                        }
+                        warnings.append(failure.userMessage)
+                    }
+                } else {
+                    let granted = await permissionManager.requestPermission(for: .systemAudio)
+                    session.systemAudioURL = nil
+                    permissionIssue = PermissionIssue(
+                        kind: .systemAudio,
+                        detail: granted
+                            ? "权限已提交给 macOS。请完全退出 MinuteFlow 后重新打开，再开始录音。"
+                            : "请在系统设置中允许当前这一个 MinuteFlow.app，然后完全退出并重新打开。"
+                    )
+                    systemAudioPermission = granted ? .restartRequired : .denied
+                    warnings.append(granted
+                        ? "系统声音权限已授予，但需要重新启动应用后生效。"
+                        : "系统声音未录制：当前应用身份尚未获得权限。")
+                }
+            }
+
+            if sourceSelection.microphoneEnabled, microphoneAllowed, let url = session.microphoneAudioURL {
+                do {
+                    try await microphoneService.start(outputURL: url)
+                    microphoneStarted = true
+                    microphonePermission = .authorized
+                } catch {
+                    session.microphoneAudioURL = nil
+                    warnings.append("麦克风未能启动：\(error.localizedDescription)")
+                }
+            }
 
             guard systemAudioStarted || microphoneStarted else {
                 if transcriptionRunning {
@@ -263,15 +284,23 @@ final class RecordingCoordinator: ObservableObject {
         permissionManager.openSettings(for: kind)
     }
 
-    func refreshPermissionStates() async {
-        microphonePermission = await permissionManager.authorizationStatus(for: .microphone)
-        systemAudioPermission = await permissionManager.authorizationStatus(for: .systemAudio)
+    func refreshPermissionStates() {
+        microphonePermission = permissionManager.authorizationStatus(for: .microphone)
+        systemAudioPermission = permissionManager.authorizationStatus(for: .systemAudio)
+    }
+
+    func verifyPermissionStates() async {
+        microphonePermission = await permissionManager.verifyPermission(for: .microphone)
+        systemAudioPermission = await permissionManager.verifyPermission(for: .systemAudio)
     }
 
     func requestPermission(_ kind: PermissionKind) async {
-        _ = await permissionManager.requestPermission(for: kind)
-        await refreshPermissionStates()
-        if await permissionManager.authorizationStatus(for: kind) != .authorized {
+        let granted = await permissionManager.requestPermission(for: kind)
+        refreshPermissionStates()
+        if kind == .systemAudio, granted, systemAudioPermission != .authorized {
+            systemAudioPermission = .restartRequired
+        }
+        if !granted || permissionManager.authorizationStatus(for: kind) != .authorized {
             permissionIssue = PermissionIssue(
                 kind: kind,
                 detail: kind == .systemAudio
@@ -311,9 +340,12 @@ final class RecordingCoordinator: ObservableObject {
             userMessage = "录音进行中，暂时不能切换会议。"
             return
         }
+        transcriptSaveTask?.cancel()
+        transcriptSaveTask = nil
+        persistCurrentTranscript()
         currentSession = session
         meetingTitle = session.title
-        status = session.recordingStatus
+        status = session.recordingStatus.isActive ? .interrupted : session.recordingStatus
         elapsedTime = session.duration
         transcriptSegments = (try? repository.loadTranscript(sessionID: session.id)) ?? []
         summaryMarkdown = try? repository.loadSummary(sessionID: session.id)
@@ -325,6 +357,9 @@ final class RecordingCoordinator: ObservableObject {
             userMessage = "当前录音仍在进行，请先停止并保存。"
             return
         }
+        transcriptSaveTask?.cancel()
+        transcriptSaveTask = nil
+        persistCurrentTranscript()
         currentSession = nil
         meetingTitle = ""
         transcriptSegments = []
@@ -369,9 +404,20 @@ final class RecordingCoordinator: ObservableObject {
             return
         }
         guard var session = currentSession else { return }
+        let requestSessionID = session.id
+        guard summarySessionID != requestSessionID else {
+            userMessage = "这条会议的纪要正在生成，请稍候。"
+            return
+        }
 
+        summarySessionID = requestSessionID
         isGeneratingSummary = true
-        defer { isGeneratingSummary = false }
+        defer {
+            if summarySessionID == requestSessionID {
+                summarySessionID = nil
+                isGeneratingSummary = false
+            }
+        }
         do {
             let markdown = try await summaryClient.summarize(
                 title: session.title,
@@ -379,19 +425,23 @@ final class RecordingCoordinator: ObservableObject {
                 configuration: SummaryConfiguration(
                     endpoint: endpoint,
                     model: modelSettings.summaryModel,
-                    apiKey: modelSettings.apiKey,
+                    apiKey: modelSettings.activeAPIKey,
                     prompt: modelSettings.summaryPrompt
                 )
             )
             session.summaryFileURL = try repository.saveSummary(markdown, sessionID: session.id)
             session.updatedAt = Date()
             try repository.save(session)
-            currentSession = session
-            summaryMarkdown = markdown
+            if currentSession?.id == requestSessionID, !status.isActive {
+                currentSession = session
+                summaryMarkdown = markdown
+                userMessage = "会议纪要已生成并保存在本地。"
+            }
             reloadRecentSessions()
-            userMessage = "会议纪要已生成并保存在本地。"
         } catch {
-            userMessage = "会议总结失败：\(error.localizedDescription)"
+            if currentSession?.id == requestSessionID {
+                userMessage = "会议总结失败：\(error.localizedDescription)"
+            }
         }
     }
 
@@ -402,7 +452,7 @@ final class RecordingCoordinator: ObservableObject {
         }
         transcriptSegments[index].text = text
         transcriptSegments[index].normalizedText = nil
-        persistCurrentTranscript()
+        scheduleTranscriptSave()
     }
 
     func restoreOriginalTranscriptSegment(id: UUID) {
@@ -442,15 +492,13 @@ final class RecordingCoordinator: ObservableObject {
             self?.transcriptionService.append(packet)
         }
         systemAudioService.onError = { [weak self] error in
-            let message = error.localizedDescription
             Task { @MainActor [weak self] in
-                self?.userMessage = "系统声音录制异常：\(message)\n麦克风录音会尽可能继续。"
+                await self?.handleRuntimeCaptureFailure(source: .system, error: error)
             }
         }
         microphoneService.onError = { [weak self] error in
-            let message = error.localizedDescription
             Task { @MainActor [weak self] in
-                self?.userMessage = "麦克风录制异常：\(message)\n系统声音录音会尽可能继续。"
+                await self?.handleRuntimeCaptureFailure(source: .microphone, error: error)
             }
         }
         transcriptionService.onSegment = { [weak self] segment in
@@ -501,6 +549,39 @@ final class RecordingCoordinator: ObservableObject {
         microphoneLevel = 0
     }
 
+    private func handleRuntimeCaptureFailure(source: TranscriptSource, error: any Error) async {
+        guard status == .recording || status == .paused else { return }
+
+        let stoppedAt = DurationFormatter.string(from: elapsedTime)
+        switch source {
+        case .system:
+            guard systemAudioStarted else { return }
+            await systemAudioService.stop()
+            systemAudioStarted = false
+            systemLevel = 0
+        case .microphone:
+            guard microphoneStarted else { return }
+            await microphoneService.stop()
+            microphoneStarted = false
+            microphoneLevel = 0
+        case .mixed:
+            return
+        }
+
+        if !systemAudioStarted && !microphoneStarted {
+            await stopRecording()
+            userMessage = "所有录音来源均已在 \(stoppedAt) 中断，现有音频和逐字稿已保存。最后错误：\(error.localizedDescription)"
+            return
+        }
+
+        if source == .system {
+            let failure = SystemAudioFailure(error: error)
+            userMessage = "系统声音已在 \(stoppedAt) 停止；麦克风仍在继续。\n\(failure.userMessage) \(failure.recoverySuggestion)"
+        } else {
+            userMessage = "麦克风已在 \(stoppedAt) 停止；系统声音仍在继续。\n\(error.localizedDescription)"
+        }
+    }
+
     private func updateSessionStatus(_ newStatus: RecordingStatus) {
         guard var session = currentSession else { return }
         session.recordingStatus = newStatus
@@ -533,12 +614,13 @@ final class RecordingCoordinator: ObservableObject {
         if sourceSelection.microphoneEnabled { sources.insert(.microphone) }
         do {
             try transcriptionService.start(
+                sessionID: currentSession?.id ?? UUID(),
                 sources: sources,
                 configuration: ASRConfiguration(
                     transport: modelSettings.detectedASRTransport,
                     endpoint: endpoint,
                     model: modelSettings.asrModel,
-                    apiKey: modelSettings.apiKey,
+                    apiKey: modelSettings.activeAPIKey,
                     language: modelSettings.transcriptionLanguage
                 ),
                 maximumChunkDuration: modelSettings.maximumChunkDuration
@@ -562,6 +644,15 @@ final class RecordingCoordinator: ObservableObject {
             currentSession = session
         } catch {
             userMessage = "逐字稿自动保存失败：\(error.localizedDescription)"
+        }
+    }
+
+    private func scheduleTranscriptSave() {
+        transcriptSaveTask?.cancel()
+        transcriptSaveTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            self?.persistCurrentTranscript()
         }
     }
 

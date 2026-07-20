@@ -3,6 +3,22 @@ import XCTest
 @testable import MinuteFlow
 
 final class MeetingRepositoryTests: XCTestCase {
+    func testRecoversStaleActiveSessionAsInterrupted() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appending(path: "MinuteFlowRepositoryRecovery-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = LocalMeetingRepository(rootDirectory: root)
+        var session = try repository.createSession(title: "异常退出", sourceSelection: .microphone)
+        session.recordingStatus = .recording
+        try repository.save(session)
+
+        let recovered = try XCTUnwrap(repository.loadRecentSessions().first)
+        XCTAssertEqual(recovered.recordingStatus, .interrupted)
+        XCTAssertNotNil(recovered.endTime)
+        XCTAssertFalse(recovered.recordingStatus.isActive)
+        XCTAssertEqual(try repository.loadRecentSessions().first?.recordingStatus, .interrupted)
+    }
+
     func testCreatesSeparateAudioDestinationsAndPersistsMetadata() throws {
         let root = FileManager.default.temporaryDirectory
             .appending(path: "MinuteFlowRepositoryTests-\(UUID().uuidString)", directoryHint: .isDirectory)

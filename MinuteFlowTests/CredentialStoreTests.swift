@@ -22,7 +22,8 @@ final class CredentialStoreTests: XCTestCase {
             "first-test-value",
             key: account,
             keychainService: service,
-            fallbackDirectory: directory
+            fallbackDirectory: directory,
+            allowProtectedFileFallback: true
         )
         XCTAssertNotNil(firstBackend)
         if firstBackend == .protectedFile {
@@ -35,6 +36,8 @@ final class CredentialStoreTests: XCTestCase {
             )
             XCTAssertEqual(directoryPermissions.intValue & 0o777, 0o700)
             XCTAssertEqual(filePermissions.intValue & 0o777, 0o600)
+            let rawData = try Data(contentsOf: credentialURL)
+            XCTAssertFalse(String(decoding: rawData, as: UTF8.self).contains("first-test-value"))
         }
         XCTAssertEqual(
             try CredentialStore.read(key: account, keychainService: service, fallbackDirectory: directory).value,
@@ -45,7 +48,8 @@ final class CredentialStoreTests: XCTestCase {
             "updated-test-value",
             key: account,
             keychainService: service,
-            fallbackDirectory: directory
+            fallbackDirectory: directory,
+            allowProtectedFileFallback: true
         )
         XCTAssertEqual(
             try CredentialStore.read(key: account, keychainService: service, fallbackDirectory: directory).value,

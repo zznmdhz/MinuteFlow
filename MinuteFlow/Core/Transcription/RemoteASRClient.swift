@@ -16,15 +16,36 @@ enum RemoteModelError: LocalizedError, Sendable {
 
     var errorDescription: String? {
         switch self {
-        case .invalidConfiguration: "模型配置不完整。请检查服务地址、模型名称和 API Key。"
-        case .invalidResponse: "模型服务返回了无法解析的响应。"
-        case .server(let status, let message): "模型服务请求失败（\(status)）：\(message)"
-        case .emptyResult: "模型服务未返回识别文字。"
+        case .invalidConfiguration: return "模型配置不完整。请检查服务地址、模型名称和 API Key。"
+        case .invalidResponse: return "模型服务返回了无法解析的响应。"
+        case .server(let status, let message):
+            let action: String
+            switch status {
+            case 400: action = "请检查模型名称、语言或请求协议。"
+            case 401, 403: action = "请检查 Token 是否有效以及是否有该模型权限。"
+            case 404: action = "请检查 Base URL 和模型服务地址。"
+            case 408: action = "请求超时，请检查网络后重试。"
+            case 429: action = "请求过于频繁或额度不足，稍后会自动重试。"
+            case 500...599: action = "服务暂时异常，稍后会自动重试。"
+            default: action = "请检查服务配置后重试。"
+            }
+            let safeMessage = String(message.prefix(240))
+            return "模型服务请求失败（\(status)）。\(action)\(safeMessage.isEmpty ? "" : " 服务信息：\(safeMessage)")"
+        case .emptyResult: return "模型服务未返回识别文字。"
         }
     }
 }
 
-struct RemoteASRClient: Sendable {
+protocol ASRClient: Sendable {
+    func transcribe(wavURL: URL, configuration: ASRConfiguration) async throws -> String
+}
+
+struct RemoteASRClient: ASRClient, Sendable {
+    private let session: URLSession
+
+    init(session: URLSession = .shared) {
+        self.session = session
+    }
     func transcribe(wavURL: URL, configuration: ASRConfiguration) async throws -> String {
         switch configuration.transport {
         case .miMoChatAudio:
@@ -56,6 +77,7 @@ struct RemoteASRClient: Sendable {
         ]
 
         var request = URLRequest(url: configuration.endpoint)
+        request.timeoutInterval = 45
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         APIRequestAuthentication.apply(apiKey: configuration.apiKey, endpoint: configuration.endpoint, to: &request)
@@ -89,6 +111,7 @@ struct RemoteASRClient: Sendable {
         body.append(Data("--\(boundary)--\r\n".utf8))
 
         var request = URLRequest(url: configuration.endpoint)
+        request.timeoutInterval = 45
         request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         APIRequestAuthentication.apply(apiKey: configuration.apiKey, endpoint: configuration.endpoint, to: &request)
@@ -97,7 +120,7 @@ struct RemoteASRClient: Sendable {
     }
 
     private func perform(_ request: URLRequest) async throws -> String {
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw RemoteModelError.invalidResponse
         }

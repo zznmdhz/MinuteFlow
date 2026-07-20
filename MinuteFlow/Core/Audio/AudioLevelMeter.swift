@@ -15,7 +15,9 @@ enum AudioLevelMeter {
 
     static func normalizedLevel(for buffer: AVAudioPCMBuffer) -> Float {
         guard let channels = buffer.floatChannelData, buffer.frameLength > 0 else { return 0 }
-        return normalizedLevel(samples: channels[0], count: Int(buffer.frameLength))
+        let channelCount = max(1, Int(buffer.format.channelCount))
+        return (0..<channelCount).reduce(Float.zero) { current, channel in
+            max(current, normalizedLevel(samples: channels[channel], count: Int(buffer.frameLength)))
+        }
     }
 }
-
