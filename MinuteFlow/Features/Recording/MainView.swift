@@ -232,7 +232,7 @@ private struct RecorderView: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text("开始一次清晰、可靠的录音")
                     .font(.system(size: 24, weight: .bold, design: .rounded))
-                Text("系统声音与麦克风分别保存，任一路异常不影响另一路。")
+                Text("完整回放用于直接播放，系统声音与麦克风原始分轨同时保留。")
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -381,18 +381,52 @@ private struct RecordingFilesPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Label("原始录音", systemImage: "waveform.circle")
+                Label("会议录音", systemImage: "waveform.circle")
                     .font(.headline)
                 Spacer()
                 Button("在 Finder 中显示") { coordinator.openCurrentSessionFolder() }
                     .buttonStyle(.link)
             }
 
-            if let url = session.systemAudioURL {
-                AudioFileRow(title: "系统声音", url: url) { coordinator.openAudioFile(url) }
+            if let url = session.mixedAudioURL,
+               FileManager.default.fileExists(atPath: url.path) {
+                AudioFileRow(title: "完整回放", badge: "推荐", badgeColor: .blue, url: url) {
+                    coordinator.openAudioFile(url)
+                }
+            } else if session.mixState == .processing || session.mixState == .queued {
+                HStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text("正在生成完整回放，原始分轨已经安全保存")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            } else if session.mixState == .failed {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Label(session.mixMessage ?? "完整回放暂未生成，可继续播放原始分轨。", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                    Spacer()
+                    Button("重新生成") {
+                        Task { await coordinator.retryCompletePlayback(sessionID: session.id) }
+                    }
+                    .controlSize(.small)
+                }
             }
-            if let url = session.microphoneAudioURL {
-                AudioFileRow(title: "麦克风", url: url) { coordinator.openAudioFile(url) }
+
+            DisclosureGroup("原始分轨") {
+                VStack(spacing: 10) {
+                    if let url = session.systemAudioURL {
+                        AudioFileRow(title: "系统声音", badge: "原始文件", badgeColor: .green, url: url) {
+                            coordinator.openAudioFile(url)
+                        }
+                    }
+                    if let url = session.microphoneAudioURL {
+                        AudioFileRow(title: "麦克风", badge: "原始文件", badgeColor: .green, url: url) {
+                            coordinator.openAudioFile(url)
+                        }
+                    }
+                }
+                .padding(.top, 10)
             }
         }
         .padding(20)
@@ -402,6 +436,8 @@ private struct RecordingFilesPanel: View {
 
 private struct AudioFileRow: View {
     let title: String
+    let badge: String
+    let badgeColor: Color
     let url: URL
     let play: () -> Void
 
@@ -414,9 +450,9 @@ private struct AudioFileRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(title).font(.subheadline.weight(.medium))
-                    Text("原始文件")
+                    Text(badge)
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.green)
+                        .foregroundStyle(badgeColor)
                 }
                 Text("\(url.lastPathComponent) · \(fileSizeText)")
                     .font(.caption)
@@ -507,6 +543,11 @@ private struct TranscriptPanel: View {
                                 Text(segment.source.title)
                                     .font(.caption2.weight(.semibold))
                                     .foregroundStyle(segment.source == .microphone ? .orange : Color.accentColor)
+                                if !segment.isFinal {
+                                    Text("识别中")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
                                 transcriptContent(for: segment)
                             }
                         }
@@ -520,43 +561,49 @@ private struct TranscriptPanel: View {
 
     private var emptyTranscriptMessage: String {
         guard coordinator.status.isActive else { return "当前会议还没有逐字稿" }
-        let seconds = Int(coordinator.modelSettings.maximumChunkDuration.rounded())
-        return "检测到停顿后会尽快显示；连续讲话最长约 \(seconds) 秒提交一次"
+        return "连续讲话约 3 秒先显示临时文字；停顿后自动定稿并按内容分段"
     }
 
     @ViewBuilder
     private func transcriptContent(for segment: TranscriptSegment) -> some View {
-        switch viewMode {
-        case .original:
-            Text(segment.originalText ?? segment.text)
+        if !segment.isFinal {
+            Text(segment.text)
                 .font(.system(size: 13.5))
-                .textSelection(.enabled)
+                .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-        case .edited:
-            VStack(alignment: .trailing, spacing: 4) {
-                TextEditor(text: Binding(
-                    get: { segment.text },
-                    set: { coordinator.updateTranscriptSegment(id: segment.id, text: $0) }
-                ))
-                .font(.system(size: 13.5))
-                .scrollContentBackground(.hidden)
-                .frame(minHeight: 44)
-                .padding(5)
-                .background(Color(nsColor: .textBackgroundColor).opacity(0.45), in: RoundedRectangle(cornerRadius: 7))
+        } else {
+            switch viewMode {
+            case .original:
+                Text(segment.originalText ?? segment.text)
+                    .font(.system(size: 13.5))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            case .edited:
+                VStack(alignment: .trailing, spacing: 4) {
+                    TextEditor(text: Binding(
+                        get: { segment.text },
+                        set: { coordinator.updateTranscriptSegment(id: segment.id, text: $0) }
+                    ))
+                    .font(.system(size: 13.5))
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 44)
+                    .padding(5)
+                    .background(Color(nsColor: .textBackgroundColor).opacity(0.45), in: RoundedRectangle(cornerRadius: 7))
 
-                if let original = segment.originalText, original != segment.text {
-                    Button("恢复原文") {
-                        coordinator.restoreOriginalTranscriptSegment(id: segment.id)
+                    if let original = segment.originalText, original != segment.text {
+                        Button("恢复原文") {
+                            coordinator.restoreOriginalTranscriptSegment(id: segment.id)
+                        }
+                        .buttonStyle(.link)
+                        .font(.caption)
                     }
-                    .buttonStyle(.link)
-                    .font(.caption)
                 }
+            case .normalized:
+                Text(segment.normalizedText ?? segment.text)
+                    .font(.system(size: 13.5))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-        case .normalized:
-            Text(segment.normalizedText ?? segment.text)
-                .font(.system(size: 13.5))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -596,6 +643,10 @@ private struct SummaryPanel: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
+                    .disabled(
+                        coordinator.status.isActive
+                            || !coordinator.transcriptSegments.contains(where: \.isFinal)
+                    )
                 }
             }
 

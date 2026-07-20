@@ -10,11 +10,18 @@ private final class ConversionInputState: @unchecked Sendable {
     }
 }
 
+struct AudioWriteReceipt: Equatable, Sendable {
+    let startFrame: Int64
+    let frameCount: Int64
+    let sampleRate: Double
+}
+
 final class AudioFileWriter: @unchecked Sendable {
     private let lock = NSLock()
     private var audioFile: AVAudioFile?
     private var converter: AVAudioConverter?
     private var converterInputFormat: AVAudioFormat?
+    private var writtenFrameCount: Int64 = 0
 
     init(url: URL, channelCount: AVAudioChannelCount) throws {
         let channels = max(1, min(channelCount, 2))
@@ -33,15 +40,25 @@ final class AudioFileWriter: @unchecked Sendable {
         )
     }
 
-    func write(_ inputBuffer: AVAudioPCMBuffer) throws {
+    @discardableResult
+    func write(_ inputBuffer: AVAudioPCMBuffer) throws -> AudioWriteReceipt {
         lock.lock()
         defer { lock.unlock() }
-        guard let audioFile else { return }
+        guard let audioFile else {
+            return AudioWriteReceipt(startFrame: writtenFrameCount, frameCount: 0, sampleRate: 48_000)
+        }
 
         let destinationFormat = audioFile.processingFormat
+        let startFrame = writtenFrameCount
         if inputBuffer.format == destinationFormat {
             try audioFile.write(from: inputBuffer)
-            return
+            let frames = Int64(inputBuffer.frameLength)
+            writtenFrameCount += frames
+            return AudioWriteReceipt(
+                startFrame: startFrame,
+                frameCount: frames,
+                sampleRate: destinationFormat.sampleRate
+            )
         }
 
         let converter = try converter(for: inputBuffer.format, destinationFormat: destinationFormat)
@@ -71,6 +88,13 @@ final class AudioFileWriter: @unchecked Sendable {
         if outputBuffer.frameLength > 0 {
             try audioFile.write(from: outputBuffer)
         }
+        let frames = Int64(outputBuffer.frameLength)
+        writtenFrameCount += frames
+        return AudioWriteReceipt(
+            startFrame: startFrame,
+            frameCount: frames,
+            sampleRate: destinationFormat.sampleRate
+        )
     }
 
     func close() {

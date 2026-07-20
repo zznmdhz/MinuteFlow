@@ -1,9 +1,40 @@
 @preconcurrency import AVFoundation
 import Foundation
 
+enum AudioCaptureTimestampQuality: String, Codable, Sendable {
+    /// Timestamp supplied by the capture API for the first sample in the buffer.
+    case captureClock
+    /// Monotonic callback arrival time. Less precise, but still comparable between sources.
+    case callbackClock
+}
+
+struct AudioCaptureTiming: Equatable, Sendable {
+    let monotonicTime: TimeInterval
+    let outputStartFrame: Int64
+    let outputFrameCount: Int64
+    let outputSampleRate: Double
+    let timestampQuality: AudioCaptureTimestampQuality
+
+    var duration: TimeInterval {
+        guard outputSampleRate > 0 else { return 0 }
+        return TimeInterval(outputFrameCount) / outputSampleRate
+    }
+}
+
 struct CapturedAudioBuffer: @unchecked Sendable {
     let buffer: AVAudioPCMBuffer
     let source: TranscriptSource
+    let timing: AudioCaptureTiming?
+
+    init(
+        buffer: AVAudioPCMBuffer,
+        source: TranscriptSource,
+        timing: AudioCaptureTiming? = nil
+    ) {
+        self.buffer = buffer
+        self.source = source
+        self.timing = timing
+    }
 }
 
 protocol AudioCaptureService: AnyObject, Sendable {

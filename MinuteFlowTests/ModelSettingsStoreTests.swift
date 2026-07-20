@@ -57,6 +57,18 @@ final class ModelSettingsStoreTests: XCTestCase {
         XCTAssertFalse(settings.connectionIsConfigured)
     }
 
+    func testLegacyThreeSecondChunkSettingMigratesToSmartFifteenSecondLimit() {
+        let suiteName = "MinuteFlowChunkMigrationTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(3.0, forKey: "models.asr.maximumChunkDuration")
+        let (settings, directory) = makeSettings(defaults: defaults)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        XCTAssertEqual(settings.maximumChunkDuration, 15)
+        XCTAssertEqual(defaults.double(forKey: "models.asr.maximumChunkDuration"), 15)
+    }
+
     func testTokenRequiresExplicitSaveAndLoadsMaskedAcrossInstances() throws {
         let suiteName = "MinuteFlowTokenLifecycleTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

@@ -29,8 +29,8 @@ final class MicrophoneCaptureService: AudioCaptureService, @unchecked Sendable {
             paused = false
         }
 
-        inputNode.installTap(onBus: 0, bufferSize: 1_024, format: format) { [weak self] buffer, _ in
-            self?.handle(buffer)
+        inputNode.installTap(onBus: 0, bufferSize: 1_024, format: format) { [weak self] buffer, time in
+            self?.handle(buffer, time: time)
         }
         tapInstalled = true
 
@@ -70,14 +70,28 @@ final class MicrophoneCaptureService: AudioCaptureService, @unchecked Sendable {
         onLevelUpdate?(0)
     }
 
-    private func handle(_ buffer: AVAudioPCMBuffer) {
+    private func handle(_ buffer: AVAudioPCMBuffer, time: AVAudioTime) {
         let (shouldWrite, activeWriter) = stateLock.withLock { (!paused, writer) }
         guard shouldWrite, let activeWriter else { return }
 
         do {
-            try activeWriter.write(buffer)
+            let receipt = try activeWriter.write(buffer)
             onLevelUpdate?(AudioLevelMeter.normalizedLevel(for: buffer))
-            onAudioBuffer?(CapturedAudioBuffer(buffer: buffer, source: .microphone))
+            let callbackTime = ProcessInfo.processInfo.systemUptime
+            let hostSeconds = time.isHostTimeValid ? AVAudioTime.seconds(forHostTime: time.hostTime) : .nan
+            let hasCaptureTimestamp = hostSeconds.isFinite && abs(hostSeconds - callbackTime) <= 5
+            let timestamp = hasCaptureTimestamp ? hostSeconds : callbackTime
+            onAudioBuffer?(CapturedAudioBuffer(
+                buffer: buffer,
+                source: .microphone,
+                timing: AudioCaptureTiming(
+                    monotonicTime: timestamp,
+                    outputStartFrame: receipt.startFrame,
+                    outputFrameCount: receipt.frameCount,
+                    outputSampleRate: receipt.sampleRate,
+                    timestampQuality: hasCaptureTimestamp ? .captureClock : .callbackClock
+                )
+            ))
         } catch {
             onError?(error)
         }

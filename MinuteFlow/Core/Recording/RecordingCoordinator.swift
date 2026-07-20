@@ -37,6 +37,8 @@ final class RecordingCoordinator: ObservableObject {
     private let permissionManager: PermissionManaging
     private let transcriptionService: RemoteRealtimeTranscriptionService
     private let summaryClient: any SummaryClient
+    private let audioMixer: any AudioMixing
+    private let recordingTimeline = RecordingTimelineBuilder()
     private var systemAudioStarted = false
     private var microphoneStarted = false
     private var timer: Timer?
@@ -53,7 +55,8 @@ final class RecordingCoordinator: ObservableObject {
         permissionManager: PermissionManaging,
         modelSettings: ModelSettingsStore = ModelSettingsStore(),
         transcriptionService: RemoteRealtimeTranscriptionService = RemoteRealtimeTranscriptionService(),
-        summaryClient: any SummaryClient = RemoteSummaryClient()
+        summaryClient: any SummaryClient = RemoteSummaryClient(),
+        audioMixer: any AudioMixing = AVFoundationOfflineAudioMixer()
     ) {
         self.systemAudioService = systemAudioService
         self.microphoneService = microphoneService
@@ -62,6 +65,7 @@ final class RecordingCoordinator: ObservableObject {
         self.modelSettings = modelSettings
         self.transcriptionService = transcriptionService
         self.summaryClient = summaryClient
+        self.audioMixer = audioMixer
 
         if
             let savedValue = UserDefaults.standard.string(forKey: Self.sourceDefaultsKey),
@@ -93,6 +97,7 @@ final class RecordingCoordinator: ObservableObject {
         transcriptionRunning = false
         systemAudioStarted = false
         microphoneStarted = false
+        recordingTimeline.reset()
 
         let title = resolvedMeetingTitle()
         var warnings: [String] = []
@@ -122,6 +127,7 @@ final class RecordingCoordinator: ObservableObject {
             }
 
             startTranscriptionIfConfigured()
+            recordingTimeline.beginActivePeriod(logicalStart: 0)
 
             if sourceSelection.systemAudioEnabled, let url = session.systemAudioURL {
                 let passiveStatus = permissionManager.authorizationStatus(for: .systemAudio)
@@ -167,6 +173,7 @@ final class RecordingCoordinator: ObservableObject {
             }
 
             guard systemAudioStarted || microphoneStarted else {
+                recordingTimeline.endActivePeriod()
                 if transcriptionRunning {
                     _ = await transcriptionService.finish()
                     transcriptionRunning = false
@@ -193,6 +200,7 @@ final class RecordingCoordinator: ObservableObject {
             }
         } catch {
             await stopActiveServices()
+            recordingTimeline.endActivePeriod()
             if transcriptionRunning {
                 _ = await transcriptionService.finish()
                 transcriptionRunning = false
@@ -205,16 +213,22 @@ final class RecordingCoordinator: ObservableObject {
     func pauseRecording() {
         guard status == .recording else { return }
         updateElapsedTime()
-        accumulatedDuration = elapsedTime
         currentRunStartedAt = nil
         if systemAudioStarted { systemAudioService.pause() }
         if microphoneStarted { microphoneService.pause() }
+        if transcriptionRunning {
+            transcriptionService.splitCurrentUtterances(reason: .userPause)
+        }
+        let timelineDuration = recordingTimeline.endActivePeriod()
+        accumulatedDuration = timelineDuration > 0 ? timelineDuration : elapsedTime
+        elapsedTime = accumulatedDuration
         status = .paused
         updateSessionStatus(.paused)
     }
 
     func resumeRecording() {
         guard status == .paused else { return }
+        recordingTimeline.beginActivePeriod(logicalStart: accumulatedDuration)
         if systemAudioStarted { systemAudioService.resume() }
         if microphoneStarted { microphoneService.resume() }
         currentRunStartedAt = Date()
@@ -232,6 +246,11 @@ final class RecordingCoordinator: ObservableObject {
         updateSessionStatus(.saving)
 
         await stopActiveServices()
+        let timelineDuration = recordingTimeline.endActivePeriod()
+        if timelineDuration > 0 {
+            elapsedTime = timelineDuration
+            accumulatedDuration = timelineDuration
+        }
 
         if transcriptionRunning {
             transcriptionActivity = "正在完成剩余片段…"
@@ -239,6 +258,7 @@ final class RecordingCoordinator: ObservableObject {
             for segment in completed where !transcriptSegments.contains(where: { $0.id == segment.id }) {
                 transcriptSegments.append(segment)
             }
+            transcriptSegments.removeAll { !$0.isFinal }
             transcriptSegments.sort { $0.startTime < $1.startTime }
             transcriptionRunning = false
         }
@@ -247,6 +267,9 @@ final class RecordingCoordinator: ObservableObject {
             session.endTime = Date()
             session.duration = elapsedTime
             session.recordingStatus = .completed
+            if session.sourceSelection == .both {
+                session.mixState = .queued
+            }
             session.updatedAt = Date()
             do {
                 if !transcriptSegments.isEmpty {
@@ -257,10 +280,26 @@ final class RecordingCoordinator: ObservableObject {
                 }
                 try repository.save(session)
                 currentSession = session
+
+                if session.sourceSelection == .both {
+                    transcriptionActivity = "正在生成完整回放…"
+                    session = await generateCompletePlayback(for: session)
+                    try repository.save(session)
+                    currentSession = session
+                }
+
                 status = .completed
-                userMessage = transcriptSegments.isEmpty
-                    ? "录音已安全保存；本次没有生成逐字稿。"
-                    : "录音和逐字稿已安全保存。"
+                if session.mixState == .ready || session.mixState == .degraded {
+                    userMessage = transcriptSegments.isEmpty
+                        ? "原始分轨和完整回放已安全保存；本次没有生成逐字稿。"
+                        : "原始分轨、完整回放和逐字稿已安全保存。"
+                } else if session.sourceSelection == .both, session.mixState == .failed {
+                    userMessage = "原始分轨已安全保存，但完整回放暂未生成。\n\(session.mixMessage ?? "可以继续播放原始分轨。")"
+                } else {
+                    userMessage = transcriptSegments.isEmpty
+                        ? "录音已安全保存；本次没有生成逐字稿。"
+                        : "录音和逐字稿已安全保存。"
+                }
                 reloadRecentSessions()
                 if modelSettings.automaticSummary && modelSettings.summaryIsConfigured {
                     await generateSummary()
@@ -272,6 +311,18 @@ final class RecordingCoordinator: ObservableObject {
             }
         } else {
             status = .completed
+        }
+    }
+
+    func finishActiveWorkForTermination() async {
+        while status == .preparing {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        if status == .recording || status == .paused {
+            await stopRecording()
+        }
+        while status == .saving {
+            try? await Task.sleep(for: .milliseconds(100))
         }
     }
 
@@ -318,6 +369,64 @@ final class RecordingCoordinator: ObservableObject {
 
     func openAudioFile(_ url: URL) {
         NSWorkspace.shared.open(url)
+    }
+
+    func retryCompletePlayback(sessionID: UUID) async {
+        guard !status.isActive else {
+            userMessage = "请先完成当前录音，再重新生成完整回放。"
+            return
+        }
+        guard var session = (currentSession?.id == sessionID ? currentSession : nil)
+            ?? recentSessions.first(where: { $0.id == sessionID }) else { return }
+
+        let sourceURLs: [(TranscriptSource, URL)] = [
+            session.systemAudioURL.map { (.system, $0) },
+            session.microphoneAudioURL.map { (.microphone, $0) }
+        ].compactMap { $0 }
+        .filter { FileManager.default.fileExists(atPath: $0.1.path) }
+        guard !sourceURLs.isEmpty else {
+            userMessage = "找不到可读取的原始分轨，无法重新生成完整回放。"
+            return
+        }
+
+        let manifest = (try? Data(contentsOf: repository.mixManifestURL(for: session.id)))
+            .flatMap { try? JSONDecoder().decode(AudioMixTimelineManifest.self, from: $0) }
+        let epochsBySource = Dictionary(uniqueKeysWithValues: (manifest?.tracks ?? []).map { ($0.source, $0.epochs) })
+        let inputs = sourceURLs.map { source, url in
+            AudioMixInput(source: source, url: url, epochs: epochsBySource[source] ?? [])
+        }
+
+        session.mixState = .processing
+        session.mixMessage = manifest == nil
+            ? "正在按原始文件起点近似生成完整回放。"
+            : "正在按录音时间轴重新生成完整回放。"
+        session.mixUpdatedAt = Date()
+        try? repository.save(session)
+        if currentSession?.id == sessionID { currentSession = session }
+
+        do {
+            let result = try await audioMixer.mix(AudioMixRequest(
+                inputs: inputs,
+                outputURL: repository.mixedAudioURL(for: session.id),
+                expectedDuration: session.duration
+            ))
+            session.mixedAudioURL = result.outputURL
+            session.mixState = result.degraded ? .degraded : .ready
+            session.mixMessage = result.degraded
+                ? "完整回放仅包含成功录制的声音来源；原始分轨均已保留。"
+                : "完整回放已重新生成。"
+            userMessage = "完整回放已重新生成。"
+        } catch {
+            session.mixedAudioURL = nil
+            session.mixState = .failed
+            session.mixMessage = "重新生成失败：\(error.localizedDescription) 原始分轨未受影响。"
+            userMessage = session.mixMessage
+        }
+        session.mixUpdatedAt = Date()
+        session.updatedAt = Date()
+        try? repository.save(session)
+        if currentSession?.id == sessionID { currentSession = session }
+        reloadRecentSessions()
     }
 
     func renameCurrentMeeting() {
@@ -392,7 +501,8 @@ final class RecordingCoordinator: ObservableObject {
     }
 
     func generateSummary() async {
-        guard !transcriptSegments.isEmpty else {
+        let finalSegments = transcriptSegments.filter(\.isFinal)
+        guard !finalSegments.isEmpty else {
             userMessage = "当前会议没有逐字稿，无法生成会议纪要。"
             return
         }
@@ -421,7 +531,7 @@ final class RecordingCoordinator: ObservableObject {
         do {
             let markdown = try await summaryClient.summarize(
                 title: session.title,
-                segments: transcriptSegments,
+                segments: finalSegments,
                 configuration: SummaryConfiguration(
                     endpoint: endpoint,
                     model: modelSettings.summaryModel,
@@ -486,9 +596,11 @@ final class RecordingCoordinator: ObservableObject {
             Task { @MainActor [weak self] in self?.microphoneLevel = level }
         }
         systemAudioService.onAudioBuffer = { [weak self] packet in
+            self?.recordingTimeline.record(packet)
             self?.transcriptionService.append(packet)
         }
         microphoneService.onAudioBuffer = { [weak self] packet in
+            self?.recordingTimeline.record(packet)
             self?.transcriptionService.append(packet)
         }
         systemAudioService.onError = { [weak self] error in
@@ -504,9 +616,25 @@ final class RecordingCoordinator: ObservableObject {
         transcriptionService.onSegment = { [weak self] segment in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.transcriptSegments.append(segment)
+                if let index = self.transcriptSegments.firstIndex(where: { $0.id == segment.id }) {
+                    self.transcriptSegments[index] = segment
+                } else {
+                    self.transcriptSegments.append(segment)
+                }
                 self.transcriptSegments.sort { $0.startTime < $1.startTime }
                 self.persistCurrentTranscript()
+            }
+        }
+        transcriptionService.onPreview = { [weak self] preview in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if let index = self.transcriptSegments.firstIndex(where: { $0.id == preview.id }) {
+                    guard !self.transcriptSegments[index].isFinal else { return }
+                    self.transcriptSegments[index] = preview
+                } else {
+                    self.transcriptSegments.append(preview)
+                }
+                self.transcriptSegments.sort { $0.startTime < $1.startTime }
             }
         }
         transcriptionService.onStatus = { [weak self] activity in
@@ -559,11 +687,17 @@ final class RecordingCoordinator: ObservableObject {
             await systemAudioService.stop()
             systemAudioStarted = false
             systemLevel = 0
+            if transcriptionRunning {
+                transcriptionService.splitCurrentUtterances(reason: .sourceInterrupted, sources: [.system])
+            }
         case .microphone:
             guard microphoneStarted else { return }
             await microphoneService.stop()
             microphoneStarted = false
             microphoneLevel = 0
+            if transcriptionRunning {
+                transcriptionService.splitCurrentUtterances(reason: .sourceInterrupted, sources: [.microphone])
+            }
         case .mixed:
             return
         }
@@ -633,10 +767,11 @@ final class RecordingCoordinator: ObservableObject {
     }
 
     private func persistCurrentTranscript() {
-        guard var session = currentSession, !transcriptSegments.isEmpty else { return }
+        let finalSegments = transcriptSegments.filter(\.isFinal)
+        guard var session = currentSession, !finalSegments.isEmpty else { return }
         do {
             session.transcriptFileURL = try repository.saveTranscript(
-                transcriptSegments,
+                finalSegments,
                 sessionID: session.id
             )
             session.updatedAt = Date()
@@ -654,6 +789,71 @@ final class RecordingCoordinator: ObservableObject {
             guard !Task.isCancelled else { return }
             self?.persistCurrentTranscript()
         }
+    }
+
+    private func generateCompletePlayback(for originalSession: MeetingSession) async -> MeetingSession {
+        var session = originalSession
+        let sourceURLs: [(TranscriptSource, URL)] = [
+            session.systemAudioURL.map { (.system, $0) },
+            session.microphoneAudioURL.map { (.microphone, $0) }
+        ].compactMap { $0 }
+        .filter { FileManager.default.fileExists(atPath: $0.1.path) }
+
+        guard !sourceURLs.isEmpty else {
+            session.mixedAudioURL = nil
+            session.mixState = .failed
+            session.mixMessage = "没有找到可读取的原始分轨。"
+            session.mixUpdatedAt = Date()
+            return session
+        }
+
+        let sessionDirectory = repository.sessionDirectory(for: session.id)
+        let relativePaths = Dictionary(uniqueKeysWithValues: sourceURLs.map { source, url in
+            let prefix = sessionDirectory.path.hasSuffix("/") ? sessionDirectory.path : sessionDirectory.path + "/"
+            let path = url.path.hasPrefix(prefix) ? String(url.path.dropFirst(prefix.count)) : url.lastPathComponent
+            return (source, path)
+        })
+        let manifest = recordingTimeline.manifest(
+            logicalDuration: session.duration,
+            relativePaths: relativePaths,
+            channelCounts: [.system: 2, .microphone: 1]
+        )
+
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try encoder.encode(manifest).write(to: repository.mixManifestURL(for: session.id), options: .atomic)
+
+            let epochsBySource = Dictionary(uniqueKeysWithValues: manifest.tracks.map { ($0.source, $0.epochs) })
+            let inputs = sourceURLs.map { source, url in
+                AudioMixInput(source: source, url: url, epochs: epochsBySource[source] ?? [])
+            }
+            session.mixState = .processing
+            session.mixMessage = "正在从原始分轨生成完整回放。"
+            session.mixUpdatedAt = Date()
+            try repository.save(session)
+
+            let result = try await audioMixer.mix(AudioMixRequest(
+                inputs: inputs,
+                outputURL: repository.mixedAudioURL(for: session.id),
+                expectedDuration: session.duration
+            ))
+            session.mixedAudioURL = result.outputURL
+            session.mixState = result.degraded ? .degraded : .ready
+            session.mixMessage = result.degraded
+                ? "完整回放仅包含成功录制的声音来源；原始分轨均已保留。"
+                : "系统声音与麦克风已按录音时间轴合成为完整回放。"
+            if !result.warnings.isEmpty {
+                session.mixMessage = ([session.mixMessage].compactMap { $0 } + result.warnings).joined(separator: " ")
+            }
+            session.mixUpdatedAt = Date()
+        } catch {
+            session.mixedAudioURL = nil
+            session.mixState = .failed
+            session.mixMessage = "完整回放生成失败：\(error.localizedDescription) 原始分轨未受影响。"
+            session.mixUpdatedAt = Date()
+        }
+        return session
     }
 
     private func resolvedMeetingTitle() -> String {

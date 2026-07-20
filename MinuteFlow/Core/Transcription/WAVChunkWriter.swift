@@ -77,6 +77,23 @@ final class WAVChunkWriter: @unchecked Sendable {
         file = nil
         converter = nil
     }
+
+    static func readTail(from url: URL, duration: TimeInterval) throws -> AVAudioPCMBuffer? {
+        guard duration > 0 else { return nil }
+        let reader = try AVAudioFile(forReading: url)
+        let requestedFrames = AVAudioFramePosition(duration * reader.processingFormat.sampleRate)
+        let frameCount = min(reader.length, requestedFrames)
+        guard frameCount > 0 else { return nil }
+        reader.framePosition = reader.length - frameCount
+        guard let buffer = AVAudioPCMBuffer(
+            pcmFormat: reader.processingFormat,
+            frameCapacity: AVAudioFrameCount(frameCount)
+        ) else {
+            throw AudioCaptureError.cannotCreateAudioBuffer
+        }
+        try reader.read(into: buffer, frameCount: AVAudioFrameCount(frameCount))
+        return buffer
+    }
 }
 
 private final class WAVConversionInput: @unchecked Sendable {
@@ -84,4 +101,3 @@ private final class WAVConversionInput: @unchecked Sendable {
     var supplied = false
     init(buffer: AVAudioPCMBuffer) { self.buffer = buffer }
 }
-

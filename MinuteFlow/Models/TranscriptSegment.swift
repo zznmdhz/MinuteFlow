@@ -14,6 +14,41 @@ enum TranscriptSource: String, Codable, CaseIterable, Sendable {
     }
 }
 
+enum TranscriptBoundaryReason: String, Codable, Sendable {
+    case naturalPause
+    case lowEnergyHardLimit
+    case forcedHardLimit
+    case recordingStopped
+    case userPause
+    case sourceInterrupted
+    case legacyUnknown
+}
+
+struct TranscriptRecognitionFragment: Codable, Equatable, Sendable {
+    let id: UUID
+    let startTime: TimeInterval
+    let endTime: TimeInterval
+    let originalText: String
+    let boundaryReason: TranscriptBoundaryReason
+    let overlapBefore: TimeInterval
+
+    init(
+        id: UUID = UUID(),
+        startTime: TimeInterval,
+        endTime: TimeInterval,
+        originalText: String,
+        boundaryReason: TranscriptBoundaryReason,
+        overlapBefore: TimeInterval = 0
+    ) {
+        self.id = id
+        self.startTime = startTime
+        self.endTime = endTime
+        self.originalText = originalText
+        self.boundaryReason = boundaryReason
+        self.overlapBefore = overlapBefore
+    }
+}
+
 struct TranscriptSegment: Codable, Identifiable, Equatable, Sendable {
     let id: UUID
     var startTime: TimeInterval
@@ -24,6 +59,10 @@ struct TranscriptSegment: Codable, Identifiable, Equatable, Sendable {
     var source: TranscriptSource
     var isFinal: Bool
     var confidence: Float?
+    /// Immutable ASR responses used to assemble this display paragraph. Optional
+    /// so transcript files written by MinuteFlow 0.6 and earlier remain readable.
+    var recognitionFragments: [TranscriptRecognitionFragment]?
+    var boundaryReason: TranscriptBoundaryReason?
 
     init(
         id: UUID = UUID(),
@@ -32,16 +71,21 @@ struct TranscriptSegment: Codable, Identifiable, Equatable, Sendable {
         text: String,
         source: TranscriptSource,
         isFinal: Bool,
-        confidence: Float? = nil
+        confidence: Float? = nil,
+        originalText: String? = nil,
+        recognitionFragments: [TranscriptRecognitionFragment]? = nil,
+        boundaryReason: TranscriptBoundaryReason? = nil
     ) {
         self.id = id
         self.startTime = startTime
         self.endTime = endTime
         self.text = text
-        self.originalText = text
+        self.originalText = originalText ?? text
         self.normalizedText = nil
         self.source = source
         self.isFinal = isFinal
         self.confidence = confidence
+        self.recognitionFragments = recognitionFragments
+        self.boundaryReason = boundaryReason
     }
 }

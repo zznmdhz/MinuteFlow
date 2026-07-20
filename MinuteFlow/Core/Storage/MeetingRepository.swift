@@ -10,6 +10,10 @@ protocol MeetingRepository {
     func saveSummary(_ markdown: String, sessionID: UUID) throws -> URL
     func loadSummary(sessionID: UUID) throws -> String?
     func sessionDirectory(for id: UUID) -> URL
+    func mixedAudioURL(for id: UUID) -> URL
+    func mixManifestURL(for id: UUID) -> URL
+    func saveMixManifest(_ manifest: AudioMixTimelineManifest, sessionID: UUID) throws -> URL
+    func loadMixManifest(sessionID: UUID) throws -> AudioMixTimelineManifest?
 }
 
 struct LocalMeetingRepository: MeetingRepository {
@@ -98,6 +102,23 @@ struct LocalMeetingRepository: MeetingRepository {
                 session.updatedAt = Date()
                 try? save(session)
             }
+            if session.mixState == .queued || session.mixState == .processing {
+                let recoveredMixedURL = mixedAudioURL(for: session.id)
+                let recoveredAttributes = try? fileManager.attributesOfItem(atPath: recoveredMixedURL.path)
+                let recoveredSize = (recoveredAttributes?[.size] as? NSNumber)?.int64Value ?? 0
+                if recoveredSize > 0 {
+                    session.mixedAudioURL = recoveredMixedURL
+                    session.mixState = .ready
+                    session.mixMessage = "已恢复上次完成但尚未来得及登记的完整回放。"
+                } else {
+                    session.mixedAudioURL = nil
+                    session.mixState = .failed
+                    session.mixMessage = "上次生成完整回放时应用退出，原始分轨仍然安全，可重新生成。"
+                }
+                session.mixUpdatedAt = Date()
+                session.updatedAt = Date()
+                try? save(session)
+            }
             return session
         }
         .sorted { $0.startTime > $1.startTime }
@@ -152,6 +173,31 @@ struct LocalMeetingRepository: MeetingRepository {
 
     func sessionDirectory(for id: UUID) -> URL {
         rootDirectory.appending(path: id.uuidString, directoryHint: .isDirectory)
+    }
+
+    func mixedAudioURL(for id: UUID) -> URL {
+        sessionDirectory(for: id).appending(path: "audio/mixed.m4a")
+    }
+
+    func mixManifestURL(for id: UUID) -> URL {
+        sessionDirectory(for: id).appending(path: "audio/mix-manifest.json")
+    }
+
+    func saveMixManifest(_ manifest: AudioMixTimelineManifest, sessionID: UUID) throws -> URL {
+        let url = mixManifestURL(for: sessionID)
+        try fileManager.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let data = try encoder.encode(manifest)
+        try data.write(to: url, options: .atomic)
+        return url
+    }
+
+    func loadMixManifest(sessionID: UUID) throws -> AudioMixTimelineManifest? {
+        let url = mixManifestURL(for: sessionID)
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        return try decoder.decode(AudioMixTimelineManifest.self, from: Data(contentsOf: url))
     }
 
     private static func timestamp(_ interval: TimeInterval) -> String {

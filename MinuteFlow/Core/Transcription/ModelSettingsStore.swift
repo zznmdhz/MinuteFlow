@@ -94,7 +94,19 @@ final class ModelSettingsStore: ObservableObject {
         transcriptionLanguage = defaults.string(forKey: Keys.language)
             ?? defaults.string(forKey: LegacyKeys.language)
             ?? "auto"
-        maximumChunkDuration = defaults.object(forKey: Keys.maximumChunkDuration) as? Double ?? 3
+        let savedMaximum = defaults.object(forKey: Keys.maximumChunkDuration) as? Double
+        // Values below ten seconds came from the legacy fixed-window splitter.
+        // Keeping them would continue to cut speech mechanically after upgrade.
+        let resolvedMaximum: Double
+        if let savedMaximum, savedMaximum >= 10 {
+            resolvedMaximum = min(savedMaximum, 30)
+        } else {
+            resolvedMaximum = 15
+        }
+        maximumChunkDuration = resolvedMaximum
+        if savedMaximum != resolvedMaximum {
+            defaults.set(resolvedMaximum, forKey: Keys.maximumChunkDuration)
+        }
 
         summaryEnabled = defaults.object(forKey: Keys.summaryEnabled) as? Bool ?? false
         summaryModel = defaults.string(forKey: Keys.summaryModel)

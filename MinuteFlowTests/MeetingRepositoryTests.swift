@@ -59,4 +59,29 @@ final class MeetingRepositoryTests: XCTestCase {
         try repository.deleteSession(id: session.id)
         XCTAssertTrue(try repository.loadRecentSessions().isEmpty)
     }
+
+    func testRecoversInterruptedMixAndCompletedButUnregisteredOutput() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appending(path: "MinuteFlowMixRecovery-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = LocalMeetingRepository(rootDirectory: root)
+        var session = try repository.createSession(title: "混音恢复", sourceSelection: .both)
+        session.recordingStatus = .completed
+        session.mixState = .processing
+        try repository.save(session)
+
+        var recovered = try XCTUnwrap(repository.loadRecentSessions().first)
+        XCTAssertEqual(recovered.mixState, .failed)
+        XCTAssertTrue(recovered.mixMessage?.contains("可重新生成") == true)
+
+        let mixedURL = repository.mixedAudioURL(for: session.id)
+        try Data("validated-mixed-placeholder".utf8).write(to: mixedURL, options: .atomic)
+        recovered.mixState = .processing
+        recovered.mixedAudioURL = nil
+        try repository.save(recovered)
+
+        let completedOutput = try XCTUnwrap(repository.loadRecentSessions().first)
+        XCTAssertEqual(completedOutput.mixState, .ready)
+        XCTAssertEqual(completedOutput.mixedAudioURL, mixedURL)
+    }
 }

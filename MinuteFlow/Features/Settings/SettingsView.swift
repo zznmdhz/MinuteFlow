@@ -75,12 +75,12 @@ struct SettingsView: View {
                         Text("英文").tag("en")
                     }
                     HStack {
-                        Text("连续讲话最长切片")
+                        Text("连续讲话安全上限")
                         Spacer()
                         Stepper(
                             "\(models.maximumChunkDuration, specifier: "%.0f") 秒",
                             value: $models.maximumChunkDuration,
-                            in: 2...8,
+                            in: 10...30,
                             step: 1
                         )
                         .labelsHidden()
@@ -88,7 +88,7 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
                     }
-                    Text("检测到约 0.7 秒静音时会提前提交，不必等满设定时长。")
+                    Text("连续讲话约 3 秒先显示一次临时预览，约 0.7 秒自然停顿后定稿；安全上限只保护超长讲话，不再按固定 3 秒切断。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

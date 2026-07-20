@@ -105,9 +105,26 @@ extension SystemAudioCaptureService: SCStreamOutput, SCStreamDelegate {
 
         do {
             let buffer = try sampleBuffer.makePCMBuffer()
-            try activeWriter.write(buffer)
+            let receipt = try activeWriter.write(buffer)
             onLevelUpdate?(AudioLevelMeter.normalizedLevel(for: buffer))
-            onAudioBuffer?(CapturedAudioBuffer(buffer: buffer, source: .system))
+            let presentationSeconds = CMSampleBufferGetPresentationTimeStamp(sampleBuffer).seconds
+            let callbackTime = ProcessInfo.processInfo.systemUptime
+            let hasCaptureTimestamp = presentationSeconds.isFinite
+                && presentationSeconds >= 0
+                && abs(presentationSeconds - callbackTime) <= 5
+            onAudioBuffer?(CapturedAudioBuffer(
+                buffer: buffer,
+                source: .system,
+                timing: AudioCaptureTiming(
+                    monotonicTime: hasCaptureTimestamp
+                        ? presentationSeconds
+                        : callbackTime,
+                    outputStartFrame: receipt.startFrame,
+                    outputFrameCount: receipt.frameCount,
+                    outputSampleRate: receipt.sampleRate,
+                    timestampQuality: hasCaptureTimestamp ? .captureClock : .callbackClock
+                )
+            ))
         } catch {
             onError?(error)
         }
