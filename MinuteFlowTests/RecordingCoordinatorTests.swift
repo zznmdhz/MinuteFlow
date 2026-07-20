@@ -302,6 +302,74 @@ final class RecordingCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(capture.values.map(\.text), ["最终内容"])
     }
+
+    func testSidebarRenamePersistsAndKeepsStableSessionDirectory() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appending(path: "MinuteFlowRename-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = LocalMeetingRepository(rootDirectory: root)
+        var session = try repository.createSession(title: "旧名称", sourceSelection: .microphone)
+        session.recordingStatus = .completed
+        try repository.save(session)
+        let originalDirectory = repository.sessionDirectory(for: session.id)
+        let coordinator = RecordingCoordinator(
+            systemAudioService: MockAudioCaptureService(name: "系统声音"),
+            microphoneService: MockAudioCaptureService(name: "测试麦克风"),
+            repository: repository,
+            permissionManager: AllowingPermissionManager(),
+            modelSettings: makeTestSettings()
+        )
+        coordinator.selectSession(session)
+
+        coordinator.renameSession(session, to: "新名称")
+
+        XCTAssertEqual(coordinator.currentSession?.title, "新名称")
+        XCTAssertEqual(try repository.loadRecentSessions().first?.title, "新名称")
+        XCTAssertEqual(repository.sessionDirectory(for: session.id), originalDirectory)
+    }
+
+    func testAIFormattedDocumentUsesFinalSegmentsAndPersistsMarkdown() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appending(path: "MinuteFlowFormattedDocument-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = LocalMeetingRepository(rootDirectory: root)
+        var session = try repository.createSession(title: "排版测试", sourceSelection: .microphone)
+        session.recordingStatus = .completed
+        let preview = TranscriptSegment(startTime: 0, endTime: 3, text: "临时文字", source: .microphone, isFinal: false)
+        let final = TranscriptSegment(startTime: 3, endTime: 6, text: "最终正文", source: .microphone, isFinal: true)
+        session.transcriptFileURL = try repository.saveTranscript([preview, final], sessionID: session.id)
+        try repository.save(session)
+
+        let credentialBox = TestCredentialBox()
+        credentialBox.write("document-token")
+        let settings = ModelSettingsStore(
+            defaults: UserDefaults(suiteName: "MinuteFlowFormattedDocument-\(UUID().uuidString)")!,
+            credentialStore: CredentialStoreAdapter(
+                read: { _ in StoredCredentialResult(value: credentialBox.read(), backend: .protectedFile) },
+                write: { value, _, _ in credentialBox.write(value); return .protectedFile }
+            )
+        )
+        settings.asrEnabled = false
+        settings.summaryEnabled = true
+        settings.summaryModel = "document-model"
+        let capture = DocumentSegmentsBox()
+        let coordinator = RecordingCoordinator(
+            systemAudioService: MockAudioCaptureService(name: "系统声音"),
+            microphoneService: MockAudioCaptureService(name: "测试麦克风"),
+            repository: repository,
+            permissionManager: AllowingPermissionManager(),
+            modelSettings: settings,
+            documentFormattingClient: CapturingDocumentFormattingClient(box: capture)
+        )
+        coordinator.selectSession(session)
+
+        await coordinator.generateFormattedDocument()
+
+        XCTAssertEqual(capture.values.map(\.text), ["最终正文"])
+        XCTAssertEqual(coordinator.formattedDocumentMarkdown, "# 已整理文稿")
+        XCTAssertEqual(try repository.loadFormattedDocument(sessionID: session.id), "# 已整理文稿")
+        XCTAssertEqual(coordinator.currentSession?.formattedDocumentFileURL?.lastPathComponent, "meeting-document.md")
+    }
 }
 
 private func timedPacket(
@@ -377,6 +445,26 @@ private struct CapturingSummaryClient: SummaryClient {
 }
 
 private final class SummarySegmentsBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var segments: [TranscriptSegment] = []
+    var values: [TranscriptSegment] { lock.withLock { segments } }
+    func store(_ value: [TranscriptSegment]) { lock.withLock { segments = value } }
+}
+
+private struct CapturingDocumentFormattingClient: DocumentFormattingClient {
+    let box: DocumentSegmentsBox
+
+    func format(
+        title: String,
+        segments: [TranscriptSegment],
+        configuration: DocumentFormattingConfiguration
+    ) async throws -> String {
+        box.store(segments)
+        return "# 已整理文稿"
+    }
+}
+
+private final class DocumentSegmentsBox: @unchecked Sendable {
     private let lock = NSLock()
     private var segments: [TranscriptSegment] = []
     var values: [TranscriptSegment] { lock.withLock { segments } }

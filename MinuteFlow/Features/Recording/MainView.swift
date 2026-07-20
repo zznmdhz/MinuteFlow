@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct MainView: View {
@@ -21,17 +22,15 @@ private struct SidebarView: View {
     @EnvironmentObject private var coordinator: RecordingCoordinator
     @Environment(\.openSettings) private var openSettings
     @State private var sessionPendingDeletion: MeetingSession?
+    @State private var sessionPendingRename: MeetingSession?
+    @State private var renameDraft = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 11) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.accentColor.gradient)
-                    Image(systemName: "waveform")
-                        .font(.system(size: 17, weight: .bold))
-                        .foregroundStyle(.white)
-                }
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .scaledToFit()
                 .frame(width: 38, height: 38)
 
                 VStack(alignment: .leading, spacing: 1) {
@@ -85,6 +84,11 @@ private struct SidebarView: View {
                                 session: session,
                                 selected: coordinator.currentSession?.id == session.id,
                                 onSelect: { coordinator.selectSession(session) },
+                                onRename: {
+                                    renameDraft = session.title
+                                    sessionPendingRename = session
+                                },
+                                onReveal: { coordinator.openSessionFolder(session) },
                                 onDelete: { sessionPendingDeletion = session }
                             )
                         }
@@ -123,6 +127,34 @@ private struct SidebarView: View {
         } message: {
             Text("此操作会删除该会议目录中的全部本地文件，无法撤销。")
         }
+        .alert(
+            "重命名会议",
+            isPresented: Binding(
+                get: { sessionPendingRename != nil },
+                set: {
+                    if !$0 {
+                        sessionPendingRename = nil
+                        renameDraft = ""
+                    }
+                }
+            )
+        ) {
+            TextField("会议名称", text: $renameDraft)
+            Button("保存") {
+                if let sessionPendingRename {
+                    coordinator.renameSession(sessionPendingRename, to: renameDraft)
+                }
+                sessionPendingRename = nil
+                renameDraft = ""
+            }
+            .disabled(renameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            Button("取消", role: .cancel) {
+                sessionPendingRename = nil
+                renameDraft = ""
+            }
+        } message: {
+            Text("重命名只改变会议标题，原始录音和文档的关联不会改变。")
+        }
     }
 }
 
@@ -130,6 +162,8 @@ private struct RecentSessionRow: View {
     let session: MeetingSession
     let selected: Bool
     let onSelect: () -> Void
+    let onRename: () -> Void
+    let onReveal: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
@@ -165,6 +199,9 @@ private struct RecentSessionRow: View {
         .padding(.vertical, 7)
         .background(selected ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 8))
         .contextMenu {
+            Button("重命名…", systemImage: "pencil", action: onRename)
+            Button("在 Finder 中显示", systemImage: "folder", action: onReveal)
+            Divider()
             Button("删除会议", role: .destructive, action: onDelete)
         }
     }
@@ -196,6 +233,12 @@ private struct RecorderView: View {
                 }
                 TranscriptPanel()
                     .environmentObject(coordinator)
+
+                if coordinator.currentSession != nil,
+                   coordinator.transcriptSegments.contains(where: \.isFinal) {
+                    FormattedDocumentPanel()
+                        .environmentObject(coordinator)
+                }
 
                 if coordinator.currentSession != nil,
                    !coordinator.transcriptSegments.isEmpty || coordinator.summaryMarkdown != nil {
@@ -485,6 +528,14 @@ private struct TranscriptPanel: View {
                 Label("实时逐字稿", systemImage: "text.bubble.fill")
                     .font(.headline)
                 Spacer()
+                if coordinator.currentSession != nil,
+                   coordinator.transcriptSegments.contains(where: \.isFinal) {
+                    Button("逐字稿文件", systemImage: "folder") {
+                        coordinator.revealTranscriptInFinder()
+                    }
+                    .buttonStyle(.link)
+                    .controlSize(.small)
+                }
                 HStack(spacing: 6) {
                     if coordinator.status.isActive {
                         ProgressView().controlSize(.small)
@@ -508,12 +559,17 @@ private struct TranscriptPanel: View {
 
                     Spacer()
 
-                    Button("规范化全文", systemImage: "wand.and.stars") {
+                    Button("基础文本校正", systemImage: "text.badge.checkmark") {
                         coordinator.normalizeTranscript()
                         viewMode = .normalized
                     }
                     .controlSize(.small)
+                    .help("仅在本地处理空格、标点和断句，不调用 AI，也不会覆盖原始识别文本")
                 }
+
+                Text("“基础文本校正”不调用 AI，只处理空格、标点和断句；需要按主题自动排版时，请使用下方的“AI 排版文稿”。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             if coordinator.transcriptSegments.isEmpty {
@@ -619,8 +675,73 @@ private enum TranscriptViewMode: String, CaseIterable, Identifiable {
         switch self {
         case .original: "原始识别"
         case .edited: "编辑文本"
-        case .normalized: "规范化"
+        case .normalized: "校正后"
         }
+    }
+}
+
+private struct FormattedDocumentPanel: View {
+    @EnvironmentObject private var coordinator: RecordingCoordinator
+    @Environment(\.openSettings) private var openSettings
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label("AI 排版文稿", systemImage: "doc.richtext.fill")
+                    .font(.headline)
+                Spacer()
+
+                if coordinator.formattedDocumentMarkdown != nil {
+                    Button("在 Finder 中查看", systemImage: "folder") {
+                        coordinator.revealFormattedDocumentInFinder()
+                    }
+                    .buttonStyle(.link)
+                    .controlSize(.small)
+                }
+
+                if coordinator.isGeneratingDocument {
+                    ProgressView().controlSize(.small)
+                    Text("正在整理…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Button(
+                        coordinator.formattedDocumentMarkdown == nil ? "生成排版文稿" : "重新生成",
+                        systemImage: "wand.and.stars"
+                    ) {
+                        Task { await coordinator.generateFormattedDocument() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(coordinator.status.isActive)
+                }
+            }
+
+            if let document = coordinator.formattedDocumentMarkdown {
+                Text(document)
+                    .font(.system(size: 13.5))
+                    .textSelection(.enabled)
+                    .lineLimit(18)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text("完整内容已保存为 Markdown 文档，可在 Finder 中使用任意文档编辑器打开。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if coordinator.modelSettings.summaryIsConfigured {
+                Text("使用当前配置的同一个总结模型，把逐字稿去除口头重复、合并自然段并按主题生成 Markdown 文档；它保留原意，不等同于会议摘要。")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("AI 排版文稿使用同一个总结模型，不需要再配置一套模型。")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Button("打开 AI 服务设置") { openSettings() }
+                        .buttonStyle(.link)
+                }
+            }
+        }
+        .padding(20)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 16))
     }
 }
 
@@ -634,6 +755,13 @@ private struct SummaryPanel: View {
                 Label("会议纪要", systemImage: "sparkles")
                     .font(.headline)
                 Spacer()
+                if coordinator.summaryMarkdown != nil {
+                    Button("在 Finder 中查看", systemImage: "folder") {
+                        coordinator.revealSummaryInFinder()
+                    }
+                    .buttonStyle(.link)
+                    .controlSize(.small)
+                }
                 if coordinator.isGeneratingSummary {
                     ProgressView().controlSize(.small)
                     Text("正在生成…").font(.caption).foregroundStyle(.secondary)

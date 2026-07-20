@@ -55,6 +55,7 @@ final class AudioMixingTests: XCTestCase {
         object.removeValue(forKey: "mixState")
         object.removeValue(forKey: "mixMessage")
         object.removeValue(forKey: "mixUpdatedAt")
+        object.removeValue(forKey: "formattedDocumentFileURL")
 
         let decoded = try JSONDecoder().decode(
             MeetingSession.self,
@@ -67,6 +68,7 @@ final class AudioMixingTests: XCTestCase {
         XCTAssertNil(decoded.mixState)
         XCTAssertNil(decoded.mixMessage)
         XCTAssertNil(decoded.mixUpdatedAt)
+        XCTAssertNil(decoded.formattedDocumentFileURL)
     }
 
     func testRepositoryProvidesStableMixedAndManifestPaths() throws {

@@ -25,6 +25,8 @@ struct MeetingSession: Codable, Identifiable, Equatable, Sendable {
     var mixUpdatedAt: Date? = nil
     var transcriptFileURL: URL?
     var summaryFileURL: URL?
+    /// AI-arranged readable Markdown. Optional for older meeting metadata.
+    var formattedDocumentFileURL: URL? = nil
     let createdAt: Date
     var updatedAt: Date
 }

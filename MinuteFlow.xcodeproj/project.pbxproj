@@ -29,6 +29,7 @@
 		47F6EDFECAFA7053BA51CB20 /* MinuteFlowApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32E8D9392681CD3EF463E4E6 /* MinuteFlowApp.swift */; };
 		5856A5027DAC2D55FF9712FB /* ModelSettingsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E469961A36BD2790CF0DB7B /* ModelSettingsStoreTests.swift */; };
 		6367C8292E64962CCCF0F23C /* RemoteSummaryClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8787AC04CCE1FB151543EB47 /* RemoteSummaryClientTests.swift */; };
+		65C93977F13707F79C1B3E78 /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = CB8FE80196FF8F6FF1370CFE /* AppIcon.icns */; };
 		6885D81AE3431F28461C1DCF /* RemoteASRClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F85D6D90AD7045514CE4346 /* RemoteASRClientTests.swift */; };
 		75D1FC6BD569F7A8E480B5B2 /* TestAudioFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EB0ADD3168820859F0812C8 /* TestAudioFactory.swift */; };
 		76D90379F6B295939CC5732C /* APIRequestAuthenticationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE91EDAAC2992C25061E84D4 /* APIRequestAuthenticationTests.swift */; };
@@ -39,12 +40,14 @@
 		9046223D545C51822BC72ACB /* ScreenCaptureKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DEC79055EBBB6D7CABF2127A /* ScreenCaptureKit.framework */; };
 		916E58A49373B47CD776D659 /* RemoteRealtimeTranscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69376D9CDD41D6C0844249DD /* RemoteRealtimeTranscriptionService.swift */; };
 		96EE53D26D52CE6B298D09BB /* MicrophoneCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12579BBD24BB5413A2D6A380 /* MicrophoneCaptureService.swift */; };
+		A6819E30AB888D5D5D307C1F /* RemoteDocumentFormattingClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8E057D6B00140F30551C8B5 /* RemoteDocumentFormattingClientTests.swift */; };
 		A826A6373058B19C2AFDE743 /* AudioMixingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0D1ED571156910A401753D8 /* AudioMixingTests.swift */; };
 		A98C7C49895FD5F8831CE3B5 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CA62E798CE8634FC099CB9AF /* AVFoundation.framework */; };
 		B0936F5BD73F856BB434C122 /* RemoteASRClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 939088793935E18624ADE1D9 /* RemoteASRClient.swift */; };
 		B3E62D1F9C91376F635D5AA5 /* SystemAudioCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A39BA96E1A0C9C2A2D10A6F5 /* SystemAudioCaptureService.swift */; };
 		B7BB4EBA17A669583590AD67 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08352D40473C2539B7F2C0EA /* KeychainStore.swift */; };
 		BEC88326F5DBDF83FA5FF6FC /* RemoteSummaryClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9F5A9C7844AA83F4BB4D7E8 /* RemoteSummaryClient.swift */; };
+		BF2AB05DA36C66DCE605F919 /* RemoteDocumentFormattingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8978BBE6143DEEC68875EE23 /* RemoteDocumentFormattingClient.swift */; };
 		BF38E9A7E8EC2FB063193A7E /* RecordingCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BF84069868E6FF00D7C78F0 /* RecordingCoordinatorTests.swift */; };
 		C3B09BC29801270215FBD2AF /* CMSampleBuffer+PCM.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3658392DDF9C631A0B916C4E /* CMSampleBuffer+PCM.swift */; };
 		C7F0338B3A57780C46C4DFCD /* TranscriptNormalizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D659C181F88F5611EF1BF6 /* TranscriptNormalizerTests.swift */; };
@@ -103,6 +106,7 @@
 		7B7AF7F8F060D26B36DFE464 /* MenuBarContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarContent.swift; sourceTree = "<group>"; };
 		7E4DD7C7BC771AEEB71CA116 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		8787AC04CCE1FB151543EB47 /* RemoteSummaryClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteSummaryClientTests.swift; sourceTree = "<group>"; };
+		8978BBE6143DEEC68875EE23 /* RemoteDocumentFormattingClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteDocumentFormattingClient.swift; sourceTree = "<group>"; };
 		8E469961A36BD2790CF0DB7B /* ModelSettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelSettingsStoreTests.swift; sourceTree = "<group>"; };
 		8F85D6D90AD7045514CE4346 /* RemoteASRClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteASRClientTests.swift; sourceTree = "<group>"; };
 		939088793935E18624ADE1D9 /* RemoteASRClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteASRClient.swift; sourceTree = "<group>"; };
@@ -115,9 +119,11 @@
 		C131D791C14BA1EE612AAAB3 /* ModelSettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelSettingsStore.swift; sourceTree = "<group>"; };
 		C93CCB42138BC9F497F13B54 /* WAVChunkWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WAVChunkWriter.swift; sourceTree = "<group>"; };
 		CA62E798CE8634FC099CB9AF /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
+		CB8FE80196FF8F6FF1370CFE /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
 		D66172872C75836D13615123 /* MeetingRepositoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingRepositoryTests.swift; sourceTree = "<group>"; };
 		D787FED07AE94ECE391B3237 /* RecordingTimelineBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingTimelineBuilder.swift; sourceTree = "<group>"; };
 		D81EDDA49E591C5C0D601998 /* CredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialStore.swift; sourceTree = "<group>"; };
+		D8E057D6B00140F30551C8B5 /* RemoteDocumentFormattingClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteDocumentFormattingClientTests.swift; sourceTree = "<group>"; };
 		DA301D89A785B5ABB9A4D564 /* MinuteFlow.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MinuteFlow.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DEC79055EBBB6D7CABF2127A /* ScreenCaptureKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ScreenCaptureKit.framework; path = System/Library/Frameworks/ScreenCaptureKit.framework; sourceTree = SDKROOT; };
 		DF9DBC2736B52584ED5FE033 /* APIRequestAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIRequestAuthentication.swift; sourceTree = "<group>"; };
@@ -172,6 +178,7 @@
 				3204D51D4023DA5F13449128 /* Core */,
 				6B3B9F7962C4B4034C56DE52 /* Features */,
 				D0203753A70BE59B7240C938 /* Models */,
+				BECE8C8DDE5F98496EB85B23 /* Resources */,
 				DE6330BFE68FF36C759AB3F0 /* Shared */,
 				CCB87E437A52EAE097140B35 /* Supporting */,
 			);
@@ -181,6 +188,7 @@
 		277EC695D3A96AB8898E37F9 /* Summary */ = {
 			isa = PBXGroup;
 			children = (
+				8978BBE6143DEEC68875EE23 /* RemoteDocumentFormattingClient.swift */,
 				F9F5A9C7844AA83F4BB4D7E8 /* RemoteSummaryClient.swift */,
 			);
 			path = Summary;
@@ -296,6 +304,14 @@
 			path = Security;
 			sourceTree = "<group>";
 		};
+		BECE8C8DDE5F98496EB85B23 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				CB8FE80196FF8F6FF1370CFE /* AppIcon.icns */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
 		CCB87E437A52EAE097140B35 /* Supporting */ = {
 			isa = PBXGroup;
 			children = (
@@ -365,6 +381,7 @@
 				5840EC14573C565E8B40CCED /* RealtimeTranscriptionServiceTests.swift */,
 				6BF84069868E6FF00D7C78F0 /* RecordingCoordinatorTests.swift */,
 				8F85D6D90AD7045514CE4346 /* RemoteASRClientTests.swift */,
+				D8E057D6B00140F30551C8B5 /* RemoteDocumentFormattingClientTests.swift */,
 				8787AC04CCE1FB151543EB47 /* RemoteSummaryClientTests.swift */,
 				F1D659C181F88F5611EF1BF6 /* TranscriptNormalizerTests.swift */,
 			);
@@ -397,6 +414,7 @@
 			buildConfigurationList = 8526CA0BF628619F4AC46C53 /* Build configuration list for PBXNativeTarget "MinuteFlow" */;
 			buildPhases = (
 				B264DE8B216D357052E5AA12 /* Sources */,
+				EF42B3A6812537C55379BDB3 /* Resources */,
 				A6BB37B7D64A8EB954D5D01D /* Frameworks */,
 			);
 			buildRules = (
@@ -447,6 +465,17 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		EF42B3A6812537C55379BDB3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				65C93977F13707F79C1B3E78 /* AppIcon.icns in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		AB5D7D3A3A85AE32B397333D /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -462,6 +491,7 @@
 				2873664D297A9F09267F87B1 /* RealtimeTranscriptionServiceTests.swift in Sources */,
 				BF38E9A7E8EC2FB063193A7E /* RecordingCoordinatorTests.swift in Sources */,
 				6885D81AE3431F28461C1DCF /* RemoteASRClientTests.swift in Sources */,
+				A6819E30AB888D5D5D307C1F /* RemoteDocumentFormattingClientTests.swift in Sources */,
 				6367C8292E64962CCCF0F23C /* RemoteSummaryClientTests.swift in Sources */,
 				C7F0338B3A57780C46C4DFCD /* TranscriptNormalizerTests.swift in Sources */,
 			);
@@ -498,6 +528,7 @@
 				1DB2F8C83A7952AB0A1D5193 /* RecordingStatus.swift in Sources */,
 				33F30B7C75A133DE38EF5FF5 /* RecordingTimelineBuilder.swift in Sources */,
 				B0936F5BD73F856BB434C122 /* RemoteASRClient.swift in Sources */,
+				BF2AB05DA36C66DCE605F919 /* RemoteDocumentFormattingClient.swift in Sources */,
 				916E58A49373B47CD776D659 /* RemoteRealtimeTranscriptionService.swift in Sources */,
 				BEC88326F5DBDF83FA5FF6FC /* RemoteSummaryClient.swift in Sources */,
 				0D07ABC59B16E736390BFDBA /* SettingsView.swift in Sources */,
@@ -605,7 +636,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -620,7 +651,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.7.0;
+				MARKETING_VERSION = 0.8.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -666,7 +697,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -687,7 +718,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.7.0;
+				MARKETING_VERSION = 0.8.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;

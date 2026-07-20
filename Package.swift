@@ -12,6 +12,9 @@ let package = Package(
             name: "MinuteFlow",
             path: "MinuteFlow",
             exclude: ["Supporting"],
+            resources: [
+                .copy("Resources/AppIcon.icns")
+            ],
             linkerSettings: [
                 .linkedFramework("AVFoundation"),
                 .linkedFramework("ScreenCaptureKit"),

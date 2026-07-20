@@ -17,6 +17,8 @@ final class RecordingCoordinator: ObservableObject {
     @Published private(set) var transcriptionActivity = "未开始转写"
     @Published private(set) var summaryMarkdown: String?
     @Published private(set) var isGeneratingSummary = false
+    @Published private(set) var formattedDocumentMarkdown: String?
+    @Published private(set) var isGeneratingDocument = false
     @Published var meetingTitle = ""
     @Published var userMessage: String?
     @Published var permissionIssue: PermissionIssue?
@@ -37,6 +39,7 @@ final class RecordingCoordinator: ObservableObject {
     private let permissionManager: PermissionManaging
     private let transcriptionService: RemoteRealtimeTranscriptionService
     private let summaryClient: any SummaryClient
+    private let documentFormattingClient: any DocumentFormattingClient
     private let audioMixer: any AudioMixing
     private let recordingTimeline = RecordingTimelineBuilder()
     private var systemAudioStarted = false
@@ -46,6 +49,7 @@ final class RecordingCoordinator: ObservableObject {
     private var currentRunStartedAt: Date?
     private var transcriptionRunning = false
     private var summarySessionID: UUID?
+    private var documentSessionID: UUID?
     private var transcriptSaveTask: Task<Void, Never>?
 
     init(
@@ -56,6 +60,7 @@ final class RecordingCoordinator: ObservableObject {
         modelSettings: ModelSettingsStore = ModelSettingsStore(),
         transcriptionService: RemoteRealtimeTranscriptionService = RemoteRealtimeTranscriptionService(),
         summaryClient: any SummaryClient = RemoteSummaryClient(),
+        documentFormattingClient: any DocumentFormattingClient = RemoteDocumentFormattingClient(),
         audioMixer: any AudioMixing = AVFoundationOfflineAudioMixer()
     ) {
         self.systemAudioService = systemAudioService
@@ -65,6 +70,7 @@ final class RecordingCoordinator: ObservableObject {
         self.modelSettings = modelSettings
         self.transcriptionService = transcriptionService
         self.summaryClient = summaryClient
+        self.documentFormattingClient = documentFormattingClient
         self.audioMixer = audioMixer
 
         if
@@ -93,6 +99,7 @@ final class RecordingCoordinator: ObservableObject {
         microphoneLevel = 0
         transcriptSegments = []
         summaryMarkdown = nil
+        formattedDocumentMarkdown = nil
         transcriptionActivity = "准备转写…"
         transcriptionRunning = false
         systemAudioStarted = false
@@ -363,12 +370,37 @@ final class RecordingCoordinator: ObservableObject {
 
     func openCurrentSessionFolder() {
         guard let currentSession else { return }
-        let directory = repository.sessionDirectory(for: currentSession.id)
-        NSWorkspace.shared.activateFileViewerSelecting([directory])
+        openSessionFolder(currentSession)
+    }
+
+    func openSessionFolder(_ session: MeetingSession) {
+        NSWorkspace.shared.activateFileViewerSelecting([repository.sessionDirectory(for: session.id)])
+    }
+
+    func revealTranscriptInFinder() {
+        guard let id = currentSession?.id else { return }
+        revealInFinder(repository.transcriptMarkdownURL(for: id), sessionID: id)
+    }
+
+    func revealSummaryInFinder() {
+        guard let id = currentSession?.id else { return }
+        revealInFinder(repository.summaryMarkdownURL(for: id), sessionID: id)
+    }
+
+    func revealFormattedDocumentInFinder() {
+        guard let id = currentSession?.id else { return }
+        revealInFinder(repository.formattedDocumentURL(for: id), sessionID: id)
     }
 
     func openAudioFile(_ url: URL) {
         NSWorkspace.shared.open(url)
+    }
+
+    private func revealInFinder(_ url: URL, sessionID: UUID) {
+        let target = FileManager.default.fileExists(atPath: url.path)
+            ? url
+            : repository.sessionDirectory(for: sessionID)
+        NSWorkspace.shared.activateFileViewerSelecting([target])
     }
 
     func retryCompletePlayback(sessionID: UUID) async {
@@ -430,15 +462,29 @@ final class RecordingCoordinator: ObservableObject {
     }
 
     func renameCurrentMeeting() {
-        guard var session = currentSession, !status.isActive else { return }
+        guard let session = currentSession, !status.isActive else { return }
         let title = meetingTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty, title != session.title else { return }
-        session.title = title
+        renameSession(session, to: title)
+    }
+
+    func renameSession(_ original: MeetingSession, to newTitle: String) {
+        guard !status.isActive || currentSession?.id != original.id else {
+            userMessage = "录音进行中，结束保存后才能重命名这条会议。"
+            return
+        }
+        let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty, title != original.title else { return }
+        var session = original
+        session.title = String(title.prefix(100))
         session.updatedAt = Date()
         do {
             try repository.save(session)
-            currentSession = session
+            if currentSession?.id == session.id {
+                currentSession = session
+                meetingTitle = session.title
+            }
             reloadRecentSessions()
+            userMessage = "会议已重命名；原始录音文件名保持不变，文件关联不会丢失。"
         } catch {
             userMessage = "会议名称保存失败：\(error.localizedDescription)"
         }
@@ -458,6 +504,7 @@ final class RecordingCoordinator: ObservableObject {
         elapsedTime = session.duration
         transcriptSegments = (try? repository.loadTranscript(sessionID: session.id)) ?? []
         summaryMarkdown = try? repository.loadSummary(sessionID: session.id)
+        formattedDocumentMarkdown = try? repository.loadFormattedDocument(sessionID: session.id)
         transcriptionActivity = transcriptSegments.isEmpty ? "尚无逐字稿" : "已载入逐字稿"
     }
 
@@ -473,6 +520,7 @@ final class RecordingCoordinator: ObservableObject {
         meetingTitle = ""
         transcriptSegments = []
         summaryMarkdown = nil
+        formattedDocumentMarkdown = nil
         elapsedTime = 0
         status = .idle
         transcriptionActivity = "未开始转写"
@@ -490,6 +538,7 @@ final class RecordingCoordinator: ObservableObject {
                 currentSession = nil
                 transcriptSegments = []
                 summaryMarkdown = nil
+                formattedDocumentMarkdown = nil
                 elapsedTime = 0
                 status = .idle
             }
@@ -555,6 +604,64 @@ final class RecordingCoordinator: ObservableObject {
         }
     }
 
+    func generateFormattedDocument() async {
+        let finalSegments = transcriptSegments.filter(\.isFinal)
+        guard !finalSegments.isEmpty else {
+            userMessage = "当前会议没有逐字稿，无法整理文稿。"
+            return
+        }
+        guard
+            modelSettings.summaryIsConfigured,
+            let endpoint = modelSettings.resolvedSummaryEndpoint
+        else {
+            userMessage = "AI 整理文稿使用同一个总结模型，请先在设置 → AI 服务中完成配置。"
+            return
+        }
+        guard var session = currentSession else { return }
+        let requestSessionID = session.id
+        guard documentSessionID != requestSessionID else {
+            userMessage = "这条会议的 AI 文稿正在生成，请稍候。"
+            return
+        }
+
+        documentSessionID = requestSessionID
+        isGeneratingDocument = true
+        defer {
+            if documentSessionID == requestSessionID {
+                documentSessionID = nil
+                isGeneratingDocument = false
+            }
+        }
+
+        do {
+            let markdown = try await documentFormattingClient.format(
+                title: session.title,
+                segments: finalSegments,
+                configuration: DocumentFormattingConfiguration(
+                    endpoint: endpoint,
+                    model: modelSettings.summaryModel,
+                    apiKey: modelSettings.activeAPIKey
+                )
+            )
+            session.formattedDocumentFileURL = try repository.saveFormattedDocument(
+                markdown,
+                sessionID: session.id
+            )
+            session.updatedAt = Date()
+            try repository.save(session)
+            if currentSession?.id == requestSessionID, !status.isActive {
+                currentSession = session
+                formattedDocumentMarkdown = markdown
+                userMessage = "AI 文稿已排版并保存为 Markdown 文档。"
+            }
+            reloadRecentSessions()
+        } catch {
+            if currentSession?.id == requestSessionID {
+                userMessage = "AI 文稿整理失败：\(error.localizedDescription)"
+            }
+        }
+    }
+
     func updateTranscriptSegment(id: UUID, text: String) {
         guard let index = transcriptSegments.firstIndex(where: { $0.id == id }) else { return }
         if transcriptSegments[index].originalText == nil {
@@ -581,7 +688,7 @@ final class RecordingCoordinator: ObservableObject {
             transcriptSegments[index].normalizedText = TranscriptNormalizer.normalize(transcriptSegments[index].text)
         }
         persistCurrentTranscript()
-        userMessage = "逐字稿已完成基础规范化；原始识别结果仍保留。"
+        userMessage = "已在本地完成空格、标点和断句校正；没有调用 AI，原始识别结果仍保留。"
     }
 
     func dismissMessage() {

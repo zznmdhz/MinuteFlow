@@ -9,7 +9,12 @@ protocol MeetingRepository {
     func loadTranscript(sessionID: UUID) throws -> [TranscriptSegment]
     func saveSummary(_ markdown: String, sessionID: UUID) throws -> URL
     func loadSummary(sessionID: UUID) throws -> String?
+    func saveFormattedDocument(_ markdown: String, sessionID: UUID) throws -> URL
+    func loadFormattedDocument(sessionID: UUID) throws -> String?
     func sessionDirectory(for id: UUID) -> URL
+    func transcriptMarkdownURL(for id: UUID) -> URL
+    func summaryMarkdownURL(for id: UUID) -> URL
+    func formattedDocumentURL(for id: UUID) -> URL
     func mixedAudioURL(for id: UUID) -> URL
     func mixManifestURL(for id: UUID) -> URL
     func saveMixManifest(_ manifest: AudioMixTimelineManifest, sessionID: UUID) throws -> URL
@@ -142,7 +147,7 @@ struct LocalMeetingRepository: MeetingRepository {
             "### \(Self.timestamp(segment.startTime)) · \(segment.source.title)\n\n\(segment.normalizedText ?? segment.text)"
         }.joined(separator: "\n\n")
         try markdown.write(
-            to: directory.appending(path: "transcript.md"),
+            to: transcriptMarkdownURL(for: sessionID),
             atomically: true,
             encoding: .utf8
         )
@@ -157,22 +162,48 @@ struct LocalMeetingRepository: MeetingRepository {
     }
 
     func saveSummary(_ markdown: String, sessionID: UUID) throws -> URL {
-        let directory = sessionDirectory(for: sessionID)
-            .appending(path: "summary", directoryHint: .isDirectory)
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        let url = directory.appending(path: "summary.md")
+        let url = summaryMarkdownURL(for: sessionID)
+        try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try markdown.write(to: url, atomically: true, encoding: .utf8)
         return url
     }
 
     func loadSummary(sessionID: UUID) throws -> String? {
-        let url = sessionDirectory(for: sessionID).appending(path: "summary/summary.md")
+        let url = summaryMarkdownURL(for: sessionID)
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    func saveFormattedDocument(_ markdown: String, sessionID: UUID) throws -> URL {
+        let url = formattedDocumentURL(for: sessionID)
+        try fileManager.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try markdown.write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
+
+    func loadFormattedDocument(sessionID: UUID) throws -> String? {
+        let url = formattedDocumentURL(for: sessionID)
         guard fileManager.fileExists(atPath: url.path) else { return nil }
         return try String(contentsOf: url, encoding: .utf8)
     }
 
     func sessionDirectory(for id: UUID) -> URL {
         rootDirectory.appending(path: id.uuidString, directoryHint: .isDirectory)
+    }
+
+    func transcriptMarkdownURL(for id: UUID) -> URL {
+        sessionDirectory(for: id).appending(path: "transcript/transcript.md")
+    }
+
+    func summaryMarkdownURL(for id: UUID) -> URL {
+        sessionDirectory(for: id).appending(path: "summary/summary.md")
+    }
+
+    func formattedDocumentURL(for id: UUID) -> URL {
+        sessionDirectory(for: id).appending(path: "document/meeting-document.md")
     }
 
     func mixedAudioURL(for id: UUID) -> URL {

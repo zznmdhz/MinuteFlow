@@ -56,6 +56,12 @@ final class MeetingRepositoryTests: XCTestCase {
         _ = try repository.saveSummary("# 测试纪要", sessionID: session.id)
         XCTAssertEqual(try repository.loadSummary(sessionID: session.id), "# 测试纪要")
 
+        let documentURL = try repository.saveFormattedDocument("# 排版文稿", sessionID: session.id)
+        XCTAssertEqual(documentURL.lastPathComponent, "meeting-document.md")
+        XCTAssertEqual(try repository.loadFormattedDocument(sessionID: session.id), "# 排版文稿")
+        XCTAssertEqual(repository.transcriptMarkdownURL(for: session.id).lastPathComponent, "transcript.md")
+        XCTAssertEqual(repository.summaryMarkdownURL(for: session.id).lastPathComponent, "summary.md")
+
         try repository.deleteSession(id: session.id)
         XCTAssertTrue(try repository.loadRecentSessions().isEmpty)
     }
