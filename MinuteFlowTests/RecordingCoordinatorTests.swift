@@ -328,6 +328,63 @@ final class RecordingCoordinatorTests: XCTestCase {
         XCTAssertEqual(repository.sessionDirectory(for: session.id), originalDirectory)
     }
 
+    func testPendingDetailRenameCommitsBeforeSwitchingSessions() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appending(path: "MinuteFlowPendingRename-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = LocalMeetingRepository(rootDirectory: root)
+        var first = try repository.createSession(title: "第一场会议", sourceSelection: .microphone)
+        first.recordingStatus = .completed
+        try repository.save(first)
+        var second = try repository.createSession(title: "第二场会议", sourceSelection: .microphone)
+        second.recordingStatus = .completed
+        try repository.save(second)
+        let coordinator = RecordingCoordinator(
+            systemAudioService: MockAudioCaptureService(name: "系统声音"),
+            microphoneService: MockAudioCaptureService(name: "测试麦克风"),
+            repository: repository,
+            permissionManager: AllowingPermissionManager(),
+            modelSettings: makeTestSettings()
+        )
+        coordinator.selectSession(first)
+        coordinator.meetingTitle = "右侧修改后的主题"
+        coordinator.scheduleCurrentMeetingRename()
+
+        coordinator.selectSession(second)
+
+        let sessions = try repository.loadRecentSessions()
+        XCTAssertEqual(sessions.first(where: { $0.id == first.id })?.title, "右侧修改后的主题")
+        XCTAssertEqual(coordinator.currentSession?.id, second.id)
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: root.appending(path: "右侧修改后的主题", directoryHint: .isDirectory).path
+        ))
+    }
+
+    func testBlankDetailRenameRestoresPersistedTitle() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appending(path: "MinuteFlowBlankRename-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = LocalMeetingRepository(rootDirectory: root)
+        var session = try repository.createSession(title: "保留原主题", sourceSelection: .microphone)
+        session.recordingStatus = .completed
+        try repository.save(session)
+        let coordinator = RecordingCoordinator(
+            systemAudioService: MockAudioCaptureService(name: "系统声音"),
+            microphoneService: MockAudioCaptureService(name: "测试麦克风"),
+            repository: repository,
+            permissionManager: AllowingPermissionManager(),
+            modelSettings: makeTestSettings()
+        )
+        coordinator.selectSession(session)
+        coordinator.meetingTitle = "   "
+        coordinator.scheduleCurrentMeetingRename()
+
+        coordinator.commitPendingMeetingRename()
+
+        XCTAssertEqual(coordinator.meetingTitle, "保留原主题")
+        XCTAssertEqual(try repository.loadRecentSessions().first?.title, "保留原主题")
+    }
+
     func testAIFormattedDocumentUsesFinalSegmentsAndPersistsMarkdown() async throws {
         let root = FileManager.default.temporaryDirectory
             .appending(path: "MinuteFlowFormattedDocument-\(UUID().uuidString)")

@@ -214,6 +214,7 @@ private struct RecentSessionRow: View {
 private struct RecorderView: View {
     @EnvironmentObject private var coordinator: RecordingCoordinator
     @ObservedObject private var models = DependencyContainer.shared.modelSettings
+    @FocusState private var meetingTitleIsFocused: Bool
 
     var body: some View {
         ScrollView {
@@ -310,7 +311,20 @@ private struct RecorderView: View {
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 15, weight: .medium))
                     .disabled(coordinator.status.isActive)
+                    .focused($meetingTitleIsFocused)
+                    .onChange(of: coordinator.meetingTitle) { _, _ in
+                        guard meetingTitleIsFocused, coordinator.currentSession != nil else { return }
+                        coordinator.scheduleCurrentMeetingRename()
+                    }
+                    .onChange(of: meetingTitleIsFocused) { wasFocused, isFocused in
+                        if wasFocused, !isFocused {
+                            coordinator.commitPendingMeetingRename()
+                        }
+                    }
                     .onSubmit { coordinator.renameCurrentMeeting() }
+                    .help(coordinator.currentSession == nil
+                        ? "可选：录音开始前填写会议名称"
+                        : "编辑后会自动同步左侧标题、会议元数据和 Finder 文件夹名称")
                 controls
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -322,6 +336,7 @@ private struct RecorderView: View {
                 .stroke(Color.primary.opacity(0.08), lineWidth: 1)
         }
         .shadow(color: .black.opacity(0.06), radius: 18, y: 8)
+        .onDisappear { coordinator.commitPendingMeetingRename() }
     }
 
     @ViewBuilder

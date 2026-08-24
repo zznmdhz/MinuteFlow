@@ -68,6 +68,8 @@ final class RecordingCoordinator: ObservableObject {
     private var speakerAnalysisSessionID: UUID?
     private var transcriptSaveTask: Task<Void, Never>?
     private var postTranscriptionTask: Task<Void, Never>?
+    private var pendingMeetingRenameTask: Task<Void, Never>?
+    private var pendingMeetingRename: (session: MeetingSession, title: String)?
     private var locationCaptureTask: Task<Void, Never>?
     private var settingsCancellables: Set<AnyCancellable> = []
 
@@ -505,9 +507,35 @@ final class RecordingCoordinator: ObservableObject {
     }
 
     func renameCurrentMeeting() {
+        if pendingMeetingRename != nil {
+            commitPendingMeetingRename()
+            return
+        }
         guard let session = currentSession, !status.isActive else { return }
-        let title = meetingTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        renameSession(session, to: title)
+        renameSession(session, to: meetingTitle)
+    }
+
+    func scheduleCurrentMeetingRename() {
+        guard let session = currentSession, !status.isActive else { return }
+        let requestedTitle = meetingTitle
+        pendingMeetingRename = (session, requestedTitle)
+        pendingMeetingRenameTask?.cancel()
+        pendingMeetingRenameTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(650))
+            } catch {
+                return
+            }
+            self?.commitPendingMeetingRename()
+        }
+    }
+
+    func commitPendingMeetingRename() {
+        pendingMeetingRenameTask?.cancel()
+        pendingMeetingRenameTask = nil
+        guard let request = pendingMeetingRename else { return }
+        pendingMeetingRename = nil
+        renameSession(request.session, to: request.title)
     }
 
     func renameSession(_ original: MeetingSession, to newTitle: String) {
@@ -516,7 +544,19 @@ final class RecordingCoordinator: ObservableObject {
             return
         }
         let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty, title != original.title else { return }
+        guard !title.isEmpty else {
+            if currentSession?.id == original.id {
+                meetingTitle = original.title
+            }
+            userMessage = "会议名称不能为空，已恢复原名称。"
+            return
+        }
+        guard title != original.title else {
+            if currentSession?.id == original.id {
+                meetingTitle = original.title
+            }
+            return
+        }
         do {
             var session = try repository.renameSession(original, to: String(title.prefix(100)))
             session.titleWasAutomaticallyGenerated = false
@@ -528,6 +568,9 @@ final class RecordingCoordinator: ObservableObject {
             reloadRecentSessions()
             userMessage = "会议和对应文件夹已同步重命名。"
         } catch {
+            if currentSession?.id == original.id {
+                meetingTitle = original.title
+            }
             userMessage = "会议名称保存失败：\(error.localizedDescription)"
         }
     }
@@ -611,6 +654,7 @@ final class RecordingCoordinator: ObservableObject {
     }
 
     func selectSession(_ session: MeetingSession) {
+        commitPendingMeetingRename()
         guard !isPostTranscribing else {
             userMessage = "正在事后转写当前会议；完成或取消后再切换会议。"
             return
@@ -645,6 +689,7 @@ final class RecordingCoordinator: ObservableObject {
     }
 
     func prepareNewRecording() {
+        commitPendingMeetingRename()
         guard !isPostTranscribing else {
             userMessage = "正在事后转写当前会议；完成或取消后再新建录音。"
             return
