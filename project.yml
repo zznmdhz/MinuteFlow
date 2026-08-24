@@ -1,0 +1,53 @@
+name: MinuteFlow
+options:
+  bundleIdPrefix: com.minuteflow
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_HARDENED_RUNTIME: YES
+    GENERATE_INFOPLIST_FILE: NO
+    CURRENT_PROJECT_VERSION: 11
+    MARKETING_VERSION: 0.11.0
+targets:
+  MinuteFlow:
+    type: application
+    platform: macOS
+    sources:
+      - path: MinuteFlow
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.minuteflow.app
+        PRODUCT_NAME: MinuteFlow
+        INFOPLIST_FILE: MinuteFlow/Supporting/Info.plist
+        CODE_SIGN_ENTITLEMENTS: MinuteFlow/Supporting/MinuteFlow.entitlements
+    dependencies:
+      - sdk: AVFoundation.framework
+      - sdk: ScreenCaptureKit.framework
+      - sdk: CoreMedia.framework
+      - sdk: CoreGraphics.framework
+      - sdk: Security.framework
+      - sdk: CoreLocation.framework
+  MinuteFlowTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: MinuteFlowTests
+    dependencies:
+      - target: MinuteFlow
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.minuteflow.tests
+schemes:
+  MinuteFlow:
+    build:
+      targets:
+        MinuteFlow: all
+        MinuteFlowTests: [test]
+    test:
+      targets:
+        - MinuteFlowTests

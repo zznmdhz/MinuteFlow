@@ -1,0 +1,20 @@
+.DS_Store
+.build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+work/
+*.p12
+*.key
+*.crt
+*.pem
+*.zip
+MinuteFlow.app/
+
+# Never commit local credentials, recordings, transcripts, or user data.
+Sessions/
+PendingTranscriptions/
+*.m4a
+*.wav
+.env
+.env.*
