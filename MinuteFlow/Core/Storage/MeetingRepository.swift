@@ -280,6 +280,8 @@ struct LocalMeetingRepository: MeetingRepository {
     }
 
     private func removeDirectoryIfEmpty(_ directory: URL) {
+        let finderMetadata = directory.appending(path: ".DS_Store")
+        if fileManager.fileExists(atPath: finderMetadata.path) { try? fileManager.removeItem(at: finderMetadata) }
         guard let contents = try? fileManager.contentsOfDirectory(atPath: directory.path), contents.isEmpty else { return }
         try? fileManager.removeItem(at: directory)
     }
