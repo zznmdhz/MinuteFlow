@@ -36,6 +36,33 @@ struct SettingsView: View {
                 Text("每场会议使用与左侧标题一致的文件夹；录音、逐字稿、纪要和 AI 文稿直接放在同一层。位置仅在本机保存，可随时关闭。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                HStack {
+                    Button {
+                        Task { await coordinator.organizeHistoricalMeetingTitles() }
+                    } label: {
+                        if coordinator.isOrganizingHistoricalTitles {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Label("整理历史会议主题", systemImage: "sparkles")
+                        }
+                    }
+                    .disabled(
+                        coordinator.status.isActive
+                            || coordinator.isOrganizingHistoricalTitles
+                            || !models.summaryIsConfigured
+                    )
+                    Spacer()
+                    if coordinator.isOrganizingHistoricalTitles {
+                        Text("\(Int(coordinator.historicalTitleProgress * 100))%")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                if !coordinator.historicalTitleMessage.isEmpty {
+                    Text(coordinator.historicalTitleMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .formStyle(.grouped)

@@ -28,6 +28,9 @@ final class RecordingCoordinator: ObservableObject {
     @Published private(set) var isPostTranscribing = false
     @Published private(set) var postTranscriptionProgress: Double = 0
     @Published private(set) var postTranscriptionMessage = ""
+    @Published private(set) var isOrganizingHistoricalTitles = false
+    @Published private(set) var historicalTitleProgress: Double = 0
+    @Published private(set) var historicalTitleMessage = ""
     @Published var meetingTitle = ""
     @Published var userMessage: String?
     @Published var permissionIssue: PermissionIssue?
@@ -527,6 +530,84 @@ final class RecordingCoordinator: ObservableObject {
         } catch {
             userMessage = "会议名称保存失败：\(error.localizedDescription)"
         }
+    }
+
+    func organizeHistoricalMeetingTitles() async {
+        guard !status.isActive, !isOrganizingHistoricalTitles else { return }
+        guard
+            modelSettings.summaryIsConfigured,
+            let endpoint = modelSettings.resolvedSummaryEndpoint
+        else {
+            userMessage = "请先在设置 → AI 服务中配置并测试文本模型。"
+            return
+        }
+
+        let candidates = recentSessions.filter { $0.title.hasPrefix("未命名会议 ") }
+        guard !candidates.isEmpty else {
+            userMessage = "现有会议都已经有主题。"
+            return
+        }
+
+        isOrganizingHistoricalTitles = true
+        historicalTitleProgress = 0
+        var renamedCount = 0
+        var skippedCount = 0
+        var failedCount = 0
+        defer { isOrganizingHistoricalTitles = false }
+
+        for (index, original) in candidates.enumerated() {
+            historicalTitleMessage = "正在整理 \(index + 1)/\(candidates.count)：\(original.title)"
+            var evidence = (try? repository.loadTranscript(sessionID: original.id))?.filter(\.isFinal) ?? []
+            if evidence.isEmpty,
+               let summary = try? repository.loadSummary(sessionID: original.id),
+               !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                evidence = [TranscriptSegment(
+                    startTime: 0,
+                    endTime: original.duration,
+                    text: summary,
+                    source: .mixed,
+                    isFinal: true
+                )]
+            }
+            guard !evidence.isEmpty else {
+                skippedCount += 1
+                historicalTitleProgress = Double(index + 1) / Double(candidates.count)
+                continue
+            }
+
+            do {
+                let response = try await summaryClient.summarize(
+                    title: original.title,
+                    segments: Self.representativeTitleEvidence(evidence),
+                    configuration: SummaryConfiguration(
+                        endpoint: endpoint,
+                        model: modelSettings.summaryModel,
+                        apiKey: modelSettings.activeAPIKey,
+                        prompt: "请只输出一个准确、具体的中文会议主题，不要解释、不要 Markdown、不要日期。长度 6 到 20 个汉字，必须基于内容，不得编造。"
+                    )
+                )
+                guard let title = Self.cleanedAutomaticTitle(response) else {
+                    failedCount += 1
+                    historicalTitleProgress = Double(index + 1) / Double(candidates.count)
+                    continue
+                }
+                var renamed = try repository.renameSession(original, to: title)
+                renamed.titleWasAutomaticallyGenerated = true
+                try repository.save(renamed)
+                if currentSession?.id == renamed.id {
+                    currentSession = renamed
+                    meetingTitle = renamed.title
+                }
+                renamedCount += 1
+            } catch {
+                failedCount += 1
+            }
+            historicalTitleProgress = Double(index + 1) / Double(candidates.count)
+        }
+
+        reloadRecentSessions()
+        historicalTitleMessage = "整理完成：已命名 \(renamedCount) 场，缺少文字依据 \(skippedCount) 场，失败 \(failedCount) 场。"
+        userMessage = historicalTitleMessage
     }
 
     func selectSession(_ session: MeetingSession) {
@@ -1402,6 +1483,19 @@ final class RecordingCoordinator: ObservableObject {
         title = title.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters))
         guard title.count >= 2 else { return nil }
         return String(title.prefix(28))
+    }
+
+    private static func representativeTitleEvidence(_ segments: [TranscriptSegment]) -> [TranscriptSegment] {
+        let ordered = segments.sorted { $0.startTime < $1.startTime }
+        let totalCharacters = ordered.reduce(0) { $0 + $1.text.count }
+        guard totalCharacters > 12_000, ordered.count > 24 else { return ordered }
+        let middleStart = max(0, ordered.count / 2 - 5)
+        let middleEnd = min(ordered.count, middleStart + 10)
+        var sampled = Array(ordered.prefix(10))
+        sampled.append(contentsOf: ordered[middleStart..<middleEnd])
+        sampled.append(contentsOf: ordered.suffix(10))
+        var seen = Set<UUID>()
+        return sampled.filter { seen.insert($0.id).inserted }.sorted { $0.startTime < $1.startTime }
     }
 
     private func resolvedMeetingTitle() -> String {

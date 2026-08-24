@@ -74,6 +74,42 @@ final class PostRecordingTranscriptionServiceTests: XCTestCase {
         XCTAssertEqual(client.requestCount, segments.values.count)
     }
 
+    func testEmptyASRFragmentDoesNotAbortRemainingRecording() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(
+            path: "MinuteFlow-PostTests-\(UUID().uuidString)",
+            directoryHint: .isDirectory
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let audioURL = directory.appending(path: "meeting.wav")
+        try makeSpeechPauseSpeechAudio(at: audioURL)
+
+        let client = PostTestASRClient(emptyRequestNumbers: [1])
+        let service = PostRecordingTranscriptionService(client: client)
+        let segments = PostSegmentBox()
+        let progress = PostProgressBox()
+        try await service.transcribe(
+            audioURL: audioURL,
+            sessionID: UUID(),
+            source: .mixed,
+            startingAt: 0,
+            configuration: ASRConfiguration(
+                transport: .miMoChatAudio,
+                endpoint: URL(string: "https://example.com/v1/chat/completions")!,
+                model: "test-asr",
+                apiKey: "not-sent-by-mock",
+                language: "auto"
+            ),
+            maximumChunkDuration: 15,
+            onSegment: { segments.append($0) },
+            onProgress: { progress.append($0) }
+        )
+
+        XCTAssertGreaterThan(client.requestCount, segments.values.count)
+        XCTAssertFalse(segments.values.isEmpty)
+        XCTAssertEqual(progress.values.last?.fraction ?? 0, 1, accuracy: 0.001)
+    }
+
     private func makeSpeechPauseSpeechAudio(at url: URL) throws {
         let sampleRate = 16_000.0
         let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
@@ -93,10 +129,21 @@ final class PostRecordingTranscriptionServiceTests: XCTestCase {
 private final class PostTestASRClient: ASRClient, @unchecked Sendable {
     private let lock = NSLock()
     private var requests = 0
+    private let emptyRequestNumbers: Set<Int>
     var requestCount: Int { lock.withLock { requests } }
 
+    init(emptyRequestNumbers: Set<Int> = []) {
+        self.emptyRequestNumbers = emptyRequestNumbers
+    }
+
     func transcribe(wavURL: URL, configuration: ASRConfiguration) async throws -> String {
-        lock.withLock { requests += 1 }
+        let requestNumber = lock.withLock {
+            requests += 1
+            return requests
+        }
+        if emptyRequestNumbers.contains(requestNumber) {
+            throw RemoteModelError.emptyResult
+        }
         return "历史录音片段"
     }
 }

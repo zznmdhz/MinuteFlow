@@ -60,10 +60,29 @@ final class PostRecordingTranscriptionService: PostRecordingTranscribing, @unche
         guard !chunks.isEmpty else { throw PostTranscriptionError.noAudibleSpeech }
 
         let totalTime = chunks.last?.endTime ?? startingAt
+        var recognizedChunkCount = 0
         for (index, chunk) in chunks.enumerated() {
             try Task.checkCancellation()
-            let text = try await transcribeWithRetry(chunk.url, configuration: configuration)
+            let text: String
+            do {
+                text = try await transcribeWithRetry(chunk.url, configuration: configuration)
+            } catch RemoteModelError.emptyResult {
+                // A short breath, click, or low-volume fragment can pass local VAD
+                // while the remote ASR correctly returns no text. Do not let that
+                // single empty fragment abort the rest of a long recording.
+                try? FileManager.default.removeItem(at: chunk.url)
+                onProgress(
+                    PostTranscriptionProgress(
+                        completedTime: chunk.endTime,
+                        totalTime: totalTime,
+                        completedChunks: index + 1,
+                        totalChunks: chunks.count
+                    )
+                )
+                continue
+            }
             try Task.checkCancellation()
+            recognizedChunkCount += 1
             let fragment = TranscriptRecognitionFragment(
                 startTime: chunk.startTime,
                 endTime: chunk.endTime,
@@ -92,6 +111,7 @@ final class PostRecordingTranscriptionService: PostRecordingTranscribing, @unche
                 )
             )
         }
+        guard recognizedChunkCount > 0 else { throw PostTranscriptionError.noAudibleSpeech }
     }
 
     private func transcribeWithRetry(
