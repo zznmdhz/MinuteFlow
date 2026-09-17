@@ -1,5 +1,7 @@
 # MinuteFlow for Mac
 
+[English](README_EN.md) | 简体中文
+
 MinuteFlow 是一款 macOS 14+ 原生会议录音与转写工具。原始录音保存在本机；开启 AI 功能后，应用按需向用户配置的服务发送短音频片段，并可根据逐字稿生成会议纪要。
 
 ## 开源与版本历史
