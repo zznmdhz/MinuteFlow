@@ -9,6 +9,9 @@ segments to a user-configured AI service for transcription and meeting notes.
 
 ## Highlights
 
+- v0.12.1: saved meeting titles are read-only until double-clicked. Viewing,
+  switching meetings, and quitting no longer rewrite unchanged transcripts;
+  identical transcript, summary, and formatted-document saves preserve dates.
 - v0.12.0: automatic pause after 30 minutes without audible input (60 minutes
   or disabled in settings). Resuming requires explicit user action. This is an
   audio-level safeguard, not speech recognition; persistent noise/music can

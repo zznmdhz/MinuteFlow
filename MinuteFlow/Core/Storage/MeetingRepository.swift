@@ -154,12 +154,12 @@ struct LocalMeetingRepository: MeetingRepository {
 
     func saveTranscript(_ segments: [TranscriptSegment], sessionID: UUID) throws -> URL {
         let url = sessionDirectory(for: sessionID).appending(path: "逐字稿.json")
-        try encoder.encode(segments).write(to: url, options: .atomic)
+        try writeIfChanged(encoder.encode(segments), to: url)
         let markdown = segments.map { segment in
             let label = segment.speakerID ?? segment.source.title
             return "### \(Self.timestamp(segment.startTime)) · \(label)\n\n\(segment.normalizedText ?? segment.text)"
         }.joined(separator: "\n\n")
-        try markdown.write(to: transcriptMarkdownURL(for: sessionID), atomically: true, encoding: .utf8)
+        try writeIfChanged(Data(markdown.utf8), to: transcriptMarkdownURL(for: sessionID))
         return url
     }
 
@@ -171,7 +171,7 @@ struct LocalMeetingRepository: MeetingRepository {
 
     func saveSummary(_ markdown: String, sessionID: UUID) throws -> URL {
         let url = summaryMarkdownURL(for: sessionID)
-        try markdown.write(to: url, atomically: true, encoding: .utf8)
+        try writeIfChanged(Data(markdown.utf8), to: url)
         return url
     }
 
@@ -182,7 +182,7 @@ struct LocalMeetingRepository: MeetingRepository {
 
     func saveFormattedDocument(_ markdown: String, sessionID: UUID) throws -> URL {
         let url = formattedDocumentURL(for: sessionID)
-        try markdown.write(to: url, atomically: true, encoding: .utf8)
+        try writeIfChanged(Data(markdown.utf8), to: url)
         return url
     }
 
@@ -342,6 +342,11 @@ struct LocalMeetingRepository: MeetingRepository {
         index.paths[session.id] = directory
         let legacy = directory.appending(path: Self.legacyMetadataName)
         if fileManager.fileExists(atPath: legacy.path) { try? fileManager.removeItem(at: legacy) }
+    }
+
+    private func writeIfChanged(_ data: Data, to url: URL) throws {
+        guard (try? Data(contentsOf: url)) != data else { return }
+        try data.write(to: url, options: .atomic)
     }
 
     private func uniqueDirectory(for title: String, excluding excluded: URL? = nil) -> URL {

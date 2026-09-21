@@ -110,6 +110,30 @@ struct RegressionChecks {
         check(coordinator.isPaused, "60 minute option pauses at threshold")
         await coordinator.stopRecording()
         check(coordinator.status == .completed && !coordinator.silencePausePresented, "save works after automatic pause")
+        let summaryURL = try repository.saveSummary("测试纪要", sessionID: session.id)
+        let documentURL = try repository.saveFormattedDocument("测试文稿", sessionID: session.id)
+        let trackedURLs = [repository.transcriptMarkdownURL(for: session.id),
+            repository.sessionDirectory(for: session.id).appending(path: "逐字稿.json"),
+            summaryURL, documentURL,
+            repository.sessionDirectory(for: session.id).appending(path: ".minuteflow-session.json")]
+        let oldDate = Date(timeIntervalSince1970: 946684800)
+        for url in trackedURLs { try FileManager.default.setAttributes([.modificationDate: oldDate], ofItemAtPath: url.path) }
+        for _ in 0..<3 {
+            coordinator.selectSession(session)
+            coordinator.flushPendingEdits()
+            coordinator.prepareNewRecording()
+        }
+        for url in trackedURLs {
+            let date = try FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
+            check(date == oldDate, "view/switch/quit preserves modification date: \(url.lastPathComponent)")
+        }
+        _ = try repository.saveTranscript(segments, sessionID: session.id)
+        _ = try repository.saveSummary("测试纪要", sessionID: session.id)
+        _ = try repository.saveFormattedDocument("测试文稿", sessionID: session.id)
+        for url in trackedURLs.prefix(4) {
+            let date = try FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
+            check(date == oldDate, "identical save preserves modification date: \(url.lastPathComponent)")
+        }
         coordinator.selectSession(session)
         coordinator.updateTranscriptSegment(id: segments[0].id, text: "立即退出也保存")
         coordinator.meetingTitle = "退出保存测试"

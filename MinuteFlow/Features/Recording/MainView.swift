@@ -222,6 +222,7 @@ private struct RecorderView: View {
     @EnvironmentObject private var coordinator: RecordingCoordinator
     @ObservedObject private var models = DependencyContainer.shared.modelSettings
     @FocusState private var meetingTitleIsFocused: Bool
+    @State private var isEditingMeetingTitle = false
 
     var body: some View {
         ScrollView {
@@ -314,6 +315,7 @@ private struct RecorderView: View {
             }
 
             VStack(alignment: .leading, spacing: 14) {
+                if coordinator.currentSession == nil || isEditingMeetingTitle {
                 TextField("会议名称（可选）", text: $coordinator.meetingTitle)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 15, weight: .medium))
@@ -326,12 +328,35 @@ private struct RecorderView: View {
                     .onChange(of: meetingTitleIsFocused) { wasFocused, isFocused in
                         if wasFocused, !isFocused {
                             coordinator.commitPendingMeetingRename()
+                            isEditingMeetingTitle = false
                         }
                     }
-                    .onSubmit { coordinator.renameCurrentMeeting() }
+                    .onSubmit {
+                        coordinator.renameCurrentMeeting()
+                        meetingTitleIsFocused = false
+                        isEditingMeetingTitle = false
+                    }
+                    .onAppear {
+                        if isEditingMeetingTitle { meetingTitleIsFocused = true }
+                    }
                     .help(coordinator.currentSession == nil
                         ? "可选：录音开始前填写会议名称"
                         : "编辑后会自动同步左侧标题、会议元数据和 Finder 文件夹名称")
+                } else {
+                    Text(coordinator.meetingTitle)
+                        .font(.system(size: 15, weight: .medium))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 5)
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) {
+                            guard !coordinator.status.isActive else { return }
+                            isEditingMeetingTitle = true
+                        }
+                        .help("双击编辑会议名称；保存后同步左侧列表和 Finder 文件夹")
+                        .accessibilityAction(named: "编辑会议名称") {
+                            if !coordinator.status.isActive { isEditingMeetingTitle = true }
+                        }
+                }
                 controls
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -344,6 +369,10 @@ private struct RecorderView: View {
         }
         .shadow(color: .black.opacity(0.06), radius: 18, y: 8)
         .onDisappear { coordinator.commitPendingMeetingRename() }
+        .onChange(of: coordinator.currentSession?.id) { _, _ in
+            isEditingMeetingTitle = false
+            meetingTitleIsFocused = false
+        }
     }
 
     @ViewBuilder

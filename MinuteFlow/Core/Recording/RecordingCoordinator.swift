@@ -720,6 +720,10 @@ final class RecordingCoordinator: ObservableObject {
         status = session.recordingStatus.isActive ? .interrupted : session.recordingStatus
         elapsedTime = session.duration
         transcriptSegments = (try? repository.loadTranscript(sessionID: session.id)) ?? []
+        // Loaded content is already saved. Merely viewing or leaving a meeting
+        // must not rewrite its transcript or advance its modification date.
+        lastPersistedSessionID = session.id
+        lastPersistedSegments = transcriptSegments.filter(\.isFinal)
         summaryMarkdown = try? repository.loadSummary(sessionID: session.id)
         formattedDocumentMarkdown = try? repository.loadFormattedDocument(sessionID: session.id)
         if let diarization = try? repository.loadDiarization(sessionID: session.id) {
