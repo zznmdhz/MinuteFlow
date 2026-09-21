@@ -3,6 +3,12 @@ import Combine
 import Foundation
 
 @MainActor
+final class RecordingLevels: ObservableObject {
+    @Published var system: Float = 0
+    @Published var microphone: Float = 0
+}
+
+@MainActor
 final class RecordingCoordinator: ObservableObject {
     @Published var sourceSelection: AudioSourceSelection {
         didSet { UserDefaults.standard.set(sourceSelection.rawValue, forKey: Self.sourceDefaultsKey) }
@@ -12,8 +18,25 @@ final class RecordingCoordinator: ObservableObject {
     }
     @Published private(set) var status: RecordingStatus = .idle
     @Published private(set) var elapsedTime: TimeInterval = 0
-    @Published private(set) var systemLevel: Float = 0
-    @Published private(set) var microphoneLevel: Float = 0
+    let levels = RecordingLevels()
+    private(set) var systemLevel: Float {
+        get { levels.system }
+        set { if levels.system != newValue { levels.system = newValue } }
+    }
+    private(set) var microphoneLevel: Float {
+        get { levels.microphone }
+        set { if levels.microphone != newValue { levels.microphone = newValue } }
+    }
+    @Published var silencePausePresented = false
+    @Published var silencePauseMinutes: Int = {
+        let stored = UserDefaults.standard.object(forKey: "silencePauseMinutes") as? Int ?? 30
+        return [0, 30, 60].contains(stored) ? stored : 30
+    }() {
+        didSet {
+            UserDefaults.standard.set(silencePauseMinutes, forKey: "silencePauseMinutes")
+            recordingActivity.reset()
+        }
+    }
     @Published private(set) var currentSession: MeetingSession?
     @Published private(set) var recentSessions: [MeetingSession] = []
     @Published private(set) var transcriptSegments: [TranscriptSegment] = []
@@ -41,7 +64,7 @@ final class RecordingCoordinator: ObservableObject {
     let modelSettings: ModelSettingsStore
     var isRecording: Bool { status == .recording }
     var isPaused: Bool { status == .paused }
-    var canStart: Bool { !status.isActive }
+    var canStart: Bool { !status.isActive && !isPostTranscribing && !isAnalyzingSpeakers }
 
     private static let sourceDefaultsKey = "defaultAudioSource"
 
@@ -57,11 +80,14 @@ final class RecordingCoordinator: ObservableObject {
     private let audioMixer: any AudioMixing
     private let locationProvider: any MeetingLocationProviding
     private let recordingTimeline = RecordingTimelineBuilder()
+    private let recordingActivity = RecordingActivityMonitor()
+    private var lastPersistedSegments: [TranscriptSegment] = []
+    private var lastPersistedSessionID: UUID?
     private var systemAudioStarted = false
     private var microphoneStarted = false
     private var timer: Timer?
     private var accumulatedDuration: TimeInterval = 0
-    private var currentRunStartedAt: Date?
+    private var currentRunStartedAt: TimeInterval?
     private var transcriptionRunning = false
     private var summarySessionID: UUID?
     private var documentSessionID: UUID?
@@ -229,7 +255,9 @@ final class RecordingCoordinator: ObservableObject {
             try repository.save(session)
             currentSession = session
             status = .recording
-            currentRunStartedAt = Date()
+            silencePausePresented = false
+            recordingActivity.reset()
+            currentRunStartedAt = ProcessInfo.processInfo.systemUptime
             startTimer()
             startTranscriptionIfConfigured(timelineOffset: 0)
 
@@ -261,21 +289,27 @@ final class RecordingCoordinator: ObservableObject {
         accumulatedDuration = timelineDuration > 0 ? timelineDuration : elapsedTime
         elapsedTime = accumulatedDuration
         status = .paused
+        systemLevel = 0
+        microphoneLevel = 0
         updateSessionStatus(.paused)
     }
 
     func resumeRecording() {
         guard status == .paused else { return }
+        silencePausePresented = false
+        userMessage = nil
+        recordingActivity.reset()
         recordingTimeline.beginActivePeriod(logicalStart: accumulatedDuration)
         if systemAudioStarted { systemAudioService.resume() }
         if microphoneStarted { microphoneService.resume() }
-        currentRunStartedAt = Date()
+        currentRunStartedAt = ProcessInfo.processInfo.systemUptime
         status = .recording
         updateSessionStatus(.recording)
     }
 
     func stopRecording() async {
         guard status == .recording || status == .paused else { return }
+        silencePausePresented = false
         updateElapsedTime()
         timer?.invalidate()
         timer = nil
@@ -539,6 +573,17 @@ final class RecordingCoordinator: ObservableObject {
     }
 
     func renameSession(_ original: MeetingSession, to newTitle: String) {
+        if pendingMeetingRename?.session.id == original.id {
+            pendingMeetingRenameTask?.cancel()
+            pendingMeetingRenameTask = nil
+            pendingMeetingRename = nil
+        }
+        guard !isPostTranscribing, !isAnalyzingSpeakers, !isGeneratingSummary, !isGeneratingDocument else {
+            userMessage = "正在处理会议文件，请完成后再重命名，避免文件路径改变。"
+            if currentSession?.id == original.id { meetingTitle = currentSession?.title ?? original.title }
+            return
+        }
+        let original = currentSession?.id == original.id ? (currentSession ?? original) : original
         guard !status.isActive || currentSession?.id != original.id else {
             userMessage = "录音进行中，结束保存后才能重命名这条会议。"
             return
@@ -655,6 +700,10 @@ final class RecordingCoordinator: ObservableObject {
 
     func selectSession(_ session: MeetingSession) {
         commitPendingMeetingRename()
+        guard !isAnalyzingSpeakers else {
+            userMessage = "正在分析当前会议的说话人，完成后再切换会议。"
+            return
+        }
         guard !isPostTranscribing else {
             userMessage = "正在事后转写当前会议；完成或取消后再切换会议。"
             return
@@ -681,15 +730,14 @@ final class RecordingCoordinator: ObservableObject {
             speakerAnalysisMessage = "尚未分析说话人"
         }
         transcriptionActivity = transcriptSegments.isEmpty ? "尚无逐字稿" : "已载入逐字稿"
-        if speakerTurns.isEmpty, transcriptSegments.contains(where: \.isFinal) {
-            Task { [weak self] in
-                await self?.analyzeCurrentMeetingSpeakers()
-            }
-        }
     }
 
     func prepareNewRecording() {
         commitPendingMeetingRename()
+        guard !isAnalyzingSpeakers else {
+            userMessage = "正在分析当前会议的说话人，完成后再新建录音。"
+            return
+        }
         guard !isPostTranscribing else {
             userMessage = "正在事后转写当前会议；完成或取消后再新建录音。"
             return
@@ -855,6 +903,11 @@ final class RecordingCoordinator: ObservableObject {
     }
 
     func deleteSession(_ session: MeetingSession) {
+        guard !isPostTranscribing, !isAnalyzingSpeakers, !isGeneratingSummary, !isGeneratingDocument,
+              !isOrganizingHistoricalTitles else {
+            userMessage = "正在处理会议文件，请完成或取消任务后再删除。"
+            return
+        }
         if status.isActive, currentSession?.id == session.id {
             userMessage = "请先停止当前录音，再删除这条会议记录。"
             return
@@ -1021,7 +1074,7 @@ final class RecordingCoordinator: ObservableObject {
     }
 
     func analyzeCurrentMeetingSpeakers() async {
-        guard !status.isActive, let session = currentSession else {
+        guard !status.isActive, !isPostTranscribing, let session = currentSession else {
             userMessage = "请先停止并保存录音，再分析说话人。"
             return
         }
@@ -1078,11 +1131,11 @@ final class RecordingCoordinator: ObservableObject {
     }
 
     private func configureCallbacks() {
-        systemAudioService.onLevelUpdate = { [weak self] level in
-            Task { @MainActor [weak self] in self?.systemLevel = level }
+        systemAudioService.onLevelUpdate = { [recordingActivity] level in
+            recordingActivity.receive(level, microphone: false)
         }
-        microphoneService.onLevelUpdate = { [weak self] level in
-            Task { @MainActor [weak self] in self?.microphoneLevel = level }
+        microphoneService.onLevelUpdate = { [recordingActivity] level in
+            recordingActivity.receive(level, microphone: true)
         }
         systemAudioService.onAudioBuffer = { [weak self] packet in
             self?.recordingTimeline.record(packet)
@@ -1111,7 +1164,7 @@ final class RecordingCoordinator: ObservableObject {
                     self.transcriptSegments.append(segment)
                 }
                 self.transcriptSegments.sort { $0.startTime < $1.startTime }
-                self.persistCurrentTranscript()
+                self.scheduleTranscriptSave()
             }
         }
         transcriptionService.onPreview = { [weak self] preview in
@@ -1140,8 +1193,29 @@ final class RecordingCoordinator: ObservableObject {
 
     private func startTimer() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.updateElapsedTime() }
+        timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.refreshRecordingActivity() }
+        }
+        if let timer { RunLoop.main.add(timer, forMode: .common) }
+    }
+
+    func refreshRecordingActivity(at time: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+        guard status == .recording else { return }
+        let sample = recordingActivity.sample(at: time)
+        // Quantization avoids publishing imperceptible differences on every audio buffer.
+        let system = (sample.system * 20).rounded() / 20
+        let microphone = (sample.microphone * 20).rounded() / 20
+        if systemLevel != system { systemLevel = system }
+        if microphoneLevel != microphone { microphoneLevel = microphone }
+        if let start = currentRunStartedAt,
+           Int(accumulatedDuration + ProcessInfo.processInfo.systemUptime - start) != Int(elapsedTime) {
+            updateElapsedTime()
+        }
+        if silencePauseMinutes > 0, sample.silentFor >= Double(silencePauseMinutes * 60) {
+            pauseRecording()
+            silencePausePresented = true
+            userMessage = "长时间未检测到有效声音，录音已自动暂停。请主动选择继续录音或结束保存。"
+            NSApp?.requestUserAttention(.criticalRequest)
         }
     }
 
@@ -1150,7 +1224,7 @@ final class RecordingCoordinator: ObservableObject {
             elapsedTime = accumulatedDuration
             return
         }
-        elapsedTime = accumulatedDuration + Date().timeIntervalSince(currentRunStartedAt)
+        elapsedTime = accumulatedDuration + max(0, ProcessInfo.processInfo.systemUptime - currentRunStartedAt)
     }
 
     private func stopActiveServices() async {
@@ -1313,6 +1387,7 @@ final class RecordingCoordinator: ObservableObject {
     private func persistCurrentTranscript() {
         let finalSegments = transcriptSegments.filter(\.isFinal)
         guard var session = currentSession, !finalSegments.isEmpty else { return }
+        guard lastPersistedSessionID != session.id || lastPersistedSegments != finalSegments else { return }
         do {
             session.transcriptFileURL = try repository.saveTranscript(
                 finalSegments,
@@ -1321,6 +1396,8 @@ final class RecordingCoordinator: ObservableObject {
             session.updatedAt = Date()
             try repository.save(session)
             currentSession = session
+            lastPersistedSessionID = session.id
+            lastPersistedSegments = finalSegments
         } catch {
             userMessage = "逐字稿自动保存失败：\(error.localizedDescription)"
         }
@@ -1333,6 +1410,13 @@ final class RecordingCoordinator: ObservableObject {
             guard !Task.isCancelled else { return }
             self?.persistCurrentTranscript()
         }
+    }
+
+    func flushPendingEdits() {
+        transcriptSaveTask?.cancel()
+        transcriptSaveTask = nil
+        persistCurrentTranscript()
+        commitPendingMeetingRename()
     }
 
     private func inspectAudioAndAnalyzeSpeakers(for original: MeetingSession) async -> MeetingSession {

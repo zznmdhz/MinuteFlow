@@ -9,6 +9,15 @@ segments to a user-configured AI service for transcription and meeting notes.
 
 ## Highlights
 
+- v0.12.0: automatic pause after 30 minutes without audible input (60 minutes
+  or disabled in settings). Resuming requires explicit user action. This is an
+  audio-level safeguard, not speech recognition; persistent noise/music can
+  prevent activation.
+- Isolated, throttled audio meters; cached meeting paths; fewer redundant disk
+  writes; historical meetings no longer trigger full audio analysis on open.
+- Safer live-session recovery, pending-edit flush on exit, cancellation of
+  offline chunking, and chronological speaker segments across both sources.
+- Standalone regression checks: `bash scripts/check-regressions.sh`.
 - Native SwiftUI/AppKit application built with Swift 6.
 - Separate ScreenCaptureKit system-audio and AVAudioEngine microphone tracks.
 - Timeline-aware mixing with pause, resume, gap alignment, and peak protection.

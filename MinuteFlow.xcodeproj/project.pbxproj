@@ -69,6 +69,7 @@
 		F28D2466A9BE49244CBD974C /* PermissionManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1896B3DC7CC237CCCE252AB /* PermissionManagerTests.swift */; };
 		F301FA4FB18159E633287650 /* TranscriptNormalizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BDDC8E32454C3E4FEF31A9B /* TranscriptNormalizer.swift */; };
 		F34E8552BF80574C8E765F75 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 039CE518AE920B0F8ACA4449 /* Security.framework */; };
+		F39B276F99EE32C95C58E7BD /* RecordingActivityMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6491EC9C0E969805D34614E7 /* RecordingActivityMonitor.swift */; };
 		F61E7F245C045F28EECC0FC9 /* MeetingLocationProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B945913FBBF10844B6B93D /* MeetingLocationProvider.swift */; };
 		F66D49B4021076468CD45AD1 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 95DDCDF7FEF85AB3AD942C4F /* CoreGraphics.framework */; };
 		F7D914A5C0A54B503B98B115 /* DependencyContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09D2C53B97E1DC013D1FAC63 /* DependencyContainer.swift */; };
@@ -106,6 +107,7 @@
 		50ED0007AD8075DDA865910D /* CredentialStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialStoreTests.swift; sourceTree = "<group>"; };
 		51F6B3A612B0C07620756939 /* AudioSignalInspection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSignalInspection.swift; sourceTree = "<group>"; };
 		5840EC14573C565E8B40CCED /* RealtimeTranscriptionServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeTranscriptionServiceTests.swift; sourceTree = "<group>"; };
+		6491EC9C0E969805D34614E7 /* RecordingActivityMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingActivityMonitor.swift; sourceTree = "<group>"; };
 		658182D53FB832E9DCFB2EC6 /* AudioLevelMeter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioLevelMeter.swift; sourceTree = "<group>"; };
 		6847FE6AC4690A5E69C1BAA5 /* RecordingDiagnosticsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingDiagnosticsService.swift; sourceTree = "<group>"; };
 		69376D9CDD41D6C0844249DD /* RemoteRealtimeTranscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteRealtimeTranscriptionService.swift; sourceTree = "<group>"; };
@@ -186,6 +188,7 @@
 		2098B70E5006208A4C009D5C /* Recording */ = {
 			isa = PBXGroup;
 			children = (
+				6491EC9C0E969805D34614E7 /* RecordingActivityMonitor.swift */,
 				F68D2A9404DBC5ED97317F94 /* RecordingCoordinator.swift */,
 				D787FED07AE94ECE391B3237 /* RecordingTimelineBuilder.swift */,
 			);
@@ -569,6 +572,7 @@
 				7CD716AA06A33039F9DE4647 /* ModelSettingsStore.swift in Sources */,
 				430C0ADD4266C740E7B0605D /* PermissionManager.swift in Sources */,
 				4A50E8C58C1645FB41545807 /* PostRecordingTranscriptionService.swift in Sources */,
+				F39B276F99EE32C95C58E7BD /* RecordingActivityMonitor.swift in Sources */,
 				D87F5D78C20BBF57A2161CCB /* RecordingCoordinator.swift in Sources */,
 				E2DC668D8D6C2E502C573894 /* RecordingDiagnosticsService.swift in Sources */,
 				1DB2F8C83A7952AB0A1D5193 /* RecordingStatus.swift in Sources */,
@@ -684,7 +688,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 13;
+				CURRENT_PROJECT_VERSION = 14;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -699,7 +703,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.11.2;
+				MARKETING_VERSION = 0.12.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -745,7 +749,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 13;
+				CURRENT_PROJECT_VERSION = 14;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -766,7 +770,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.11.2;
+				MARKETING_VERSION = 0.12.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;

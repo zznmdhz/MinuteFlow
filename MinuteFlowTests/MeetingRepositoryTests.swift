@@ -12,7 +12,8 @@ final class MeetingRepositoryTests: XCTestCase {
         session.recordingStatus = .recording
         try repository.save(session)
 
-        let recovered = try XCTUnwrap(repository.loadRecentSessions().first)
+        XCTAssertEqual(try repository.loadRecentSessions().first?.recordingStatus, .recording)
+        let recovered = try XCTUnwrap(LocalMeetingRepository(rootDirectory: root).loadRecentSessions().first)
         XCTAssertEqual(recovered.recordingStatus, .interrupted)
         XCTAssertNotNil(recovered.endTime)
         XCTAssertFalse(recovered.recordingStatus.isActive)
@@ -81,7 +82,7 @@ final class MeetingRepositoryTests: XCTestCase {
         session.mixState = .processing
         try repository.save(session)
 
-        var recovered = try XCTUnwrap(repository.loadRecentSessions().first)
+        var recovered = try XCTUnwrap(LocalMeetingRepository(rootDirectory: root).loadRecentSessions().first)
         XCTAssertEqual(recovered.mixState, .failed)
         XCTAssertTrue(recovered.mixMessage?.contains("可重新生成") == true)
 
@@ -91,7 +92,7 @@ final class MeetingRepositoryTests: XCTestCase {
         recovered.mixedAudioURL = nil
         try repository.save(recovered)
 
-        let completedOutput = try XCTUnwrap(repository.loadRecentSessions().first)
+        let completedOutput = try XCTUnwrap(LocalMeetingRepository(rootDirectory: root).loadRecentSessions().first)
         XCTAssertEqual(completedOutput.mixState, .ready)
         XCTAssertEqual(completedOutput.mixedAudioURL, mixedURL)
     }

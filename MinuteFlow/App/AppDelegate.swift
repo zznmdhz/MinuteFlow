@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let coordinator = DependencyContainer.shared.recordingCoordinator
+        coordinator.flushPendingEdits()
         guard coordinator.status.isActive else {
             return .terminateNow
         }

@@ -49,14 +49,20 @@ final class PostRecordingTranscriptionService: PostRecordingTranscribing, @unche
         )
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let chunks = try await Task.detached(priority: .userInitiated) {
+        let chunkingTask = Task.detached(priority: .utility) {
             try OfflineAudioChunker.makeChunks(
                 audioURL: audioURL,
                 directory: directory,
                 startingAt: max(0, startingAt),
                 maximumChunkDuration: min(max(maximumChunkDuration, 10), 30)
             )
-        }.value
+        }
+        let chunks = try await withTaskCancellationHandler {
+            try await chunkingTask.value
+        } onCancel: {
+            chunkingTask.cancel()
+        }
+        try Task.checkCancellation()
         guard !chunks.isEmpty else { throw PostTranscriptionError.noAudibleSpeech }
 
         let totalTime = chunks.last?.endTime ?? startingAt

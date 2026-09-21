@@ -28,6 +28,11 @@ protocol MeetingRepository {
 /// One meeting equals one readable, flat folder. UUID folders from earlier
 /// versions are migrated on load while hidden metadata preserves the stable ID.
 struct LocalMeetingRepository: MeetingRepository {
+    private final class DirectoryIndex {
+        var paths: [UUID: URL] = [:]
+        var loaded: Set<UUID> = []
+    }
+    private let index = DirectoryIndex()
     private static let metadataName = ".minuteflow-session.json"
     private static let legacyMetadataName = "metadata.json"
 
@@ -78,6 +83,7 @@ struct LocalMeetingRepository: MeetingRepository {
             session.microphoneAudioURL = directory.appending(path: "\(prefix)_麦克风.m4a")
         }
         try writeMetadata(session, in: directory)
+        index.loaded.insert(session.id)
         return session
     }
 
@@ -107,14 +113,16 @@ struct LocalMeetingRepository: MeetingRepository {
         var sessions: [MeetingSession] = []
         for entry in entries where (try? entry.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
             guard var session = decodeSession(in: entry) else { continue }
-            session = (try? migrateToReadableFlatLayout(session, from: entry)) ?? session
-            if session.recordingStatus.isActive {
+            index.paths[session.id] = entry
+            let firstLoad = index.loaded.insert(session.id).inserted
+            if firstLoad { session = (try? migrateToReadableFlatLayout(session, from: entry)) ?? session }
+            if firstLoad && session.recordingStatus.isActive {
                 session.recordingStatus = .interrupted
                 session.endTime = session.endTime ?? session.updatedAt
                 session.updatedAt = Date()
                 try? save(session)
             }
-            if session.mixState == .queued || session.mixState == .processing {
+            if firstLoad && (session.mixState == .queued || session.mixState == .processing) {
                 let recovered = mixedAudioURL(for: session.id)
                 let attributes = try? fileManager.attributesOfItem(atPath: recovered.path)
                 let size = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
@@ -140,6 +148,8 @@ struct LocalMeetingRepository: MeetingRepository {
         let directory = sessionDirectory(for: id)
         guard fileManager.fileExists(atPath: directory.path) else { return }
         try fileManager.removeItem(at: directory)
+        index.paths.removeValue(forKey: id)
+        index.loaded.remove(id)
     }
 
     func saveTranscript(_ segments: [TranscriptSegment], sessionID: UUID) throws -> URL {
@@ -194,7 +204,10 @@ struct LocalMeetingRepository: MeetingRepository {
     }
 
     func sessionDirectory(for id: UUID) -> URL {
-        locateSessionDirectory(id: id) ?? rootDirectory.appending(path: id.uuidString, directoryHint: .isDirectory)
+        if let cached = index.paths[id], fileManager.fileExists(atPath: cached.path) { return cached }
+        let directory = locateSessionDirectory(id: id) ?? rootDirectory.appending(path: id.uuidString, directoryHint: .isDirectory)
+        index.paths[id] = directory
+        return directory
     }
 
     func transcriptMarkdownURL(for id: UUID) -> URL { sessionDirectory(for: id).appending(path: "逐字稿.md") }
@@ -323,7 +336,10 @@ struct LocalMeetingRepository: MeetingRepository {
 
     private func writeMetadata(_ session: MeetingSession, in directory: URL) throws {
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        try encoder.encode(session).write(to: directory.appending(path: Self.metadataName), options: .atomic)
+        let destination = directory.appending(path: Self.metadataName)
+        let data = try encoder.encode(session)
+        if (try? Data(contentsOf: destination)) != data { try data.write(to: destination, options: .atomic) }
+        index.paths[session.id] = directory
         let legacy = directory.appending(path: Self.legacyMetadataName)
         if fileManager.fileExists(atPath: legacy.path) { try? fileManager.removeItem(at: legacy) }
     }

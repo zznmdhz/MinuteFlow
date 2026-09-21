@@ -325,7 +325,8 @@ final class RecordingCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(coordinator.currentSession?.title, "新名称")
         XCTAssertEqual(try repository.loadRecentSessions().first?.title, "新名称")
-        XCTAssertEqual(repository.sessionDirectory(for: session.id), originalDirectory)
+        XCTAssertNotEqual(repository.sessionDirectory(for: session.id), originalDirectory)
+        XCTAssertEqual(repository.sessionDirectory(for: session.id).lastPathComponent, "新名称")
     }
 
     func testPendingDetailRenameCommitsBeforeSwitchingSessions() throws {

@@ -53,10 +53,14 @@ enum TranscriptSpeakerAligner {
                     boundaryReason: unit.boundaryReason,
                     speakerID: speakerID
                 )
-                appendOrMerge(next, into: &timeline)
+                timeline.append(next)
             }
         }
-        return timeline
+        var ordered: [TranscriptSegment] = []
+        for segment in timeline.sorted(by: { $0.startTime < $1.startTime }) {
+            appendOrMerge(segment, into: &ordered)
+        }
+        return ordered
     }
 
     private static func recognitionUnits(from segment: TranscriptSegment) -> [TranscriptRecognitionFragment] {
@@ -91,7 +95,8 @@ enum TranscriptSpeakerAligner {
         }
         let gap = next.startTime - previous.endTime
         let combinedDuration = next.endTime - previous.startTime
-        guard previous.speakerID == next.speakerID, gap <= 1.2, combinedDuration <= 60 else {
+        guard previous.source == next.source, previous.speakerID == next.speakerID,
+              gap >= -0.1, gap <= 1.2, combinedDuration <= 60 else {
             result.append(next)
             return
         }

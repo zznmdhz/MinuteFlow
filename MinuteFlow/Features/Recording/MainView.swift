@@ -15,6 +15,13 @@ struct MainView: View {
                 .frame(minWidth: 600)
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .alert("录音已自动暂停", isPresented: $coordinator.silencePausePresented) {
+            Button("继续录音") { coordinator.resumeRecording() }
+            Button("结束并保存") { Task { await coordinator.stopRecording() } }
+            Button("保持暂停", role: .cancel) {}
+        } message: {
+            Text("连续 \(coordinator.silencePauseMinutes) 分钟未检测到有效声音。已有录音仍然保留；只有你主动选择继续，才会恢复录音。")
+        }
     }
 }
 
@@ -419,14 +426,16 @@ private struct RecorderView: View {
                     title: "系统声音",
                     detail: "会议应用与浏览器",
                     enabled: coordinator.sourceSelection.systemAudioEnabled,
-                    level: coordinator.systemLevel
+                    levels: coordinator.levels,
+                    isMicrophone: false
                 )
                 SourceCard(
                     icon: "mic.fill",
                     title: "麦克风",
                     detail: coordinator.microphoneName,
                     enabled: coordinator.sourceSelection.microphoneEnabled,
-                    level: coordinator.microphoneLevel
+                    levels: coordinator.levels,
+                    isMicrophone: true
                 )
             }
         }
@@ -986,7 +995,8 @@ private struct SourceCard: View {
     let title: String
     let detail: String
     let enabled: Bool
-    let level: Float
+    @ObservedObject var levels: RecordingLevels
+    let isMicrophone: Bool
 
     var body: some View {
         HStack(spacing: 12) {
@@ -1007,7 +1017,7 @@ private struct SourceCard: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                AudioLevelView(level: enabled ? level : 0)
+                AudioLevelView(level: enabled ? (isMicrophone ? levels.microphone : levels.system) : 0)
             }
         }
         .padding(13)

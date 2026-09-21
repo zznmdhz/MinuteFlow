@@ -31,6 +31,16 @@ struct SettingsView: View {
                 LabeledContent("录音质量", value: "标准（AAC · 48 kHz）")
                 LabeledContent("麦克风", value: coordinator.microphoneName)
             }
+            Section("防忘关保护") {
+                Picker("连续无有效声音时暂停", selection: $coordinator.silencePauseMinutes) {
+                    Text("30 分钟（推荐）").tag(30)
+                    Text("60 分钟").tag(60)
+                    Text("关闭").tag(0)
+                }
+                Text("根据两路音频的实际音量判断，不依赖 AI 或网络。暂停后需主动继续；背景音乐或持续噪音可能使保护不触发。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Section("文件") {
                 Toggle("记录会议开始位置", isOn: $coordinator.recordMeetingLocation)
                 Text("每场会议使用与左侧标题一致的文件夹；录音、逐字稿、纪要和 AI 文稿直接放在同一层。位置仅在本机保存，可随时关闭。")
