@@ -180,7 +180,7 @@ public partial class MainWindow : Window
         WorkProgress.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
         SystemMeter.Value = active && !engine!.IsPaused && duration - engine.LastSystemSample < 0.5 ? Math.Min(1, engine.SystemLevel * 5) : 0; MicMeter.Value = active && !engine!.IsPaused && duration - engine.LastMicrophoneSample < 0.5 ? Math.Min(1, engine.MicrophoneLevel * 5) : 0;
         SystemMeter.IsEnabled = current?.SystemAudioURL is not null; MicMeter.IsEnabled = current?.MicrophoneAudioURL is not null;
-        if (playbackFile is not null) { PlaybackLabel.Text = $"{playbackFile.CurrentTime:hh\\:mm\\:ss} / {playbackFile.TotalTime:hh\\:mm\\:ss}"; PlaybackSlider.Value = playbackFile.TotalTime.TotalSeconds <= 0 ? 0 : playbackFile.CurrentTime.TotalSeconds / playbackFile.TotalTime.TotalSeconds; }
+        if (playbackFile is not null) { PlaybackLabel.Text = $"{MeetingTime.Format(playbackFile.CurrentTime.TotalSeconds)} / {MeetingTime.Format(playbackFile.TotalTime.TotalSeconds)}"; PlaybackSlider.Value = playbackFile.TotalTime.TotalSeconds <= 0 ? 0 : playbackFile.CurrentTime.TotalSeconds / playbackFile.TotalTime.TotalSeconds; }
         if (active && !busy && engine!.ShouldAutoPause)
         {
             engine.Pause(); BringToFront();

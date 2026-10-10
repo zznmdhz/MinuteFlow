@@ -205,7 +205,7 @@ public static class PostTranscriber
             token.ThrowIfCancellationRequested();
             foreach (var chunk in segmenter.Push(buffer[..read], AudioRecorder.SampleRate, (double)frames / AudioRecorder.SampleRate)) await HandleChunk(chunk);
             frames += read;
-            progress(Math.Min(1, frames / (AudioRecorder.SampleRate * Math.Max(1, total))), $"正在补全 {TimeSpan.FromSeconds((double)frames / AudioRecorder.SampleRate):hh\\:mm\\:ss} / {TimeSpan.FromSeconds(total):hh\\:mm\\:ss}");
+            progress(Math.Min(1, frames / (AudioRecorder.SampleRate * Math.Max(1, total))), $"正在补全 {MeetingTime.Format((double)frames / AudioRecorder.SampleRate)} / {MeetingTime.Format(total)}");
             await Task.Yield();
         }
         foreach (var chunk in segmenter.Push([], AudioRecorder.SampleRate, (double)frames / AudioRecorder.SampleRate, true)) await HandleChunk(chunk);
