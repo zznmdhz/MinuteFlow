@@ -30,6 +30,40 @@ struct RegressionChecks {
 
         let root = FileManager.default.temporaryDirectory.appending(path: "MinuteFlowRegression-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }
+        let importedRoot = root.appending(path: "imported")
+        let importedDirectory = importedRoot.appending(path: "双平台导入验证")
+        try FileManager.default.createDirectory(at: importedDirectory, withIntermediateDirectories: true)
+        let fixtureDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appending(path: "windows/tests/MinuteFlow.Core.Tests/Fixtures")
+        try FileManager.default.copyItem(at: fixtureDirectory.appending(path: "windows-session.json"),
+            to: importedDirectory.appending(path: ".minuteflow-session.json"))
+        for name in ["麦克风.wav", "系统声音.wav", "完整回放.wav"] {
+            try Data("file-name fixture".utf8).write(to: importedDirectory.appending(path: name))
+        }
+        try FileManager.default.copyItem(at: fixtureDirectory.appending(path: "swift-transcript.json"),
+            to: importedDirectory.appending(path: "逐字稿.json"))
+        let portable = LocalMeetingRepository(rootDirectory: importedRoot)
+        let importedSessions = try portable.loadRecentSessions()
+        check(importedSessions.count == 1, "Mac reads Windows fractional ISO8601 dates")
+        let imported = importedSessions[0]
+        check(imported.microphoneAudioURL?.resolvingSymlinksInPath().path == importedDirectory.appending(path: "麦克风.wav").resolvingSymlinksInPath().path,
+            "Windows relative microphone path resolves inside copied meeting")
+        check(imported.mixedAudioURL?.pathExtension == "wav", "WAV playback stays WAV during Mac migration")
+        check(!FileManager.default.fileExists(atPath: importedDirectory.appending(path: "麦克风.m4a").path),
+            "Migration never relabels WAV as AAC")
+        check(!(try portable.loadTranscript(sessionID: imported.id)).isEmpty, "Mac reads shared transcript fixture")
+        try FileManager.default.copyItem(at: fixtureDirectory.appending(path: "windows-mix-timeline.json"),
+            to: importedDirectory.appending(path: "混音时间轴.json"))
+        try FileManager.default.copyItem(at: fixtureDirectory.appending(path: "windows-speaker-timeline.json"),
+            to: importedDirectory.appending(path: "说话人时间轴.json"))
+        check(try portable.loadMixManifest(sessionID: imported.id)?.tracks.first?.epochs.first?.timestampQuality == .callbackClock,
+            "Mac decodes Windows mix timestamp quality")
+        check(try portable.loadDiarization(sessionID: imported.id)?.speakerCount == 2,
+            "Mac decodes Windows speaker timeline and dates")
+        let lookAlike = URL(string: "https://xiaomimimo.com.example.test/v1/chat/completions")!
+        var authRequest = URLRequest(url: lookAlike)
+        APIRequestAuthentication.apply(apiKey: "test-token", endpoint: lookAlike, to: &authRequest)
+        check(authRequest.value(forHTTPHeaderField: "api-key") == nil, "Look-alike hosts do not receive MiMo API authentication")
         let repository = LocalMeetingRepository(rootDirectory: root)
         var session = try repository.createSession(title: "回归测试", sourceSelection: .microphone)
         session.recordingStatus = .recording

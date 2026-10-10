@@ -1,0 +1,18 @@
+{
+  "id": "D27B2BF8-42FE-4736-8A5B-3AC449AD5089",
+  "title": "项目目标与供应商选择方案讨论",
+  "sourceSelection": "both",
+  "startTime": "2026-08-17T05:59:00Z",
+  "endTime": "2026-08-17T06:45:28Z",
+  "duration": 2788,
+  "recordingStatus": "completed",
+  "microphoneAudioURL": "file:///Users/example/MinuteFlow/Sessions/Old%20Title/%E9%BA%A6%E5%85%8B%E9%A3%8E.m4a",
+  "mixedAudioURL": "file:///Users/example/MinuteFlow/Sessions/Old%20Title/%E5%AE%8C%E6%95%B4%E5%9B%9E%E6%94%BE.m4a",
+  "transcriptFileURL": "file:///Users/example/MinuteFlow/Sessions/Old%20Title/%E9%80%90%E5%AD%97%E7%A8%BF.json",
+  "summaryFileURL": "file:///Users/example/MinuteFlow/Sessions/Old%20Title/%E4%BC%9A%E8%AE%AE%E7%BA%AA%E8%A6%81.md",
+  "mixState": "ready",
+  "speakerNames": { "speaker-1": "发言人甲", "speaker-2": "发言人乙" },
+  "postTranscriptionCompletedDuration": 2788,
+  "createdAt": "2026-08-17T05:59:00Z",
+  "updatedAt": "2026-08-17T06:45:28Z"
+}

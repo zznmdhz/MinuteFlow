@@ -1,0 +1,10 @@
+<Project>
+  <PropertyGroup>
+    <MinuteFlowVersionJson>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)version.json'))</MinuteFlowVersionJson>
+    <Version>$([System.Text.RegularExpressions.Regex]::Match('$(MinuteFlowVersionJson)', '&quot;version&quot;\s*:\s*&quot;([^&quot;]+)&quot;').Groups[1].Value)</Version>
+    <AssemblyVersion>$(Version).0</AssemblyVersion>
+    <FileVersion>$(Version).0</FileVersion>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+</Project>

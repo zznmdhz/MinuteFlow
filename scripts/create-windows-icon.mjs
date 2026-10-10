@@ -1,0 +1,12 @@
+import fs from 'node:fs';
+const assetRoot = new URL('../windows/MinuteFlow.Windows/assets/', import.meta.url);
+const png = fs.readFileSync(new URL('AppIcon.png', assetRoot));
+if (png.readUInt32BE(16) !== 256 || png.readUInt32BE(20) !== 256) throw new Error('Icon PNG must be 256x256');
+const header = Buffer.alloc(22);
+header.writeUInt16LE(1, 2);
+header.writeUInt16LE(1, 4);
+header.writeUInt16LE(1, 10);
+header.writeUInt16LE(32, 12);
+header.writeUInt32LE(png.length, 14);
+header.writeUInt32LE(22, 18);
+fs.writeFileSync(new URL('MinuteFlow.ico', assetRoot), Buffer.concat([header, png]));

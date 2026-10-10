@@ -1,0 +1,10 @@
+import fs from 'node:fs';
+const root = new URL('../', import.meta.url);
+const version = JSON.parse(fs.readFileSync(new URL('version.json', root), 'utf8'));
+const project = fs.readFileSync(new URL('project.yml', root), 'utf8');
+if (!/^\d+\.\d+\.\d+$/.test(version.version) || !Number.isInteger(version.build)) throw new Error('Invalid release version');
+if (!project.includes(`MARKETING_VERSION: ${version.version}`) || !project.includes(`CURRENT_PROJECT_VERSION: ${version.build}`)) throw new Error('Mac version differs from version.json');
+const props = fs.readFileSync(new URL('Directory.Build.props', root), 'utf8');
+if (!props.includes('version.json')) throw new Error('Windows must derive its version from version.json');
+if (process.env.GITHUB_REF_TYPE === 'tag' && process.env.GITHUB_REF_NAME !== `v${version.version}`) throw new Error('Release tag differs from both platform versions');
+console.log(`Both platforms: ${version.version} (${version.build})`);

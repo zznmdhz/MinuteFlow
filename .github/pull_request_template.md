@@ -5,6 +5,9 @@ Describe the problem and the focused change in this pull request.
 ## Verification
 
 - [ ] I built the macOS target with a compatible Swift toolchain.
+- [ ] I built the Windows target and ran its behavioral checks.
+- [ ] I updated both implementations for shared behavior, or explained why a platform is unaffected.
+- [ ] Both versions derive from `version.json`; the feature matrix and release notes match the actual implementation.
 - [ ] I ran the relevant tests, or documented why they could not run.
 - [ ] I added or updated tests for changed behavior where practical.
 

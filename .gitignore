@@ -18,3 +18,14 @@ PendingTranscriptions/
 *.wav
 .env
 .env.*
+
+# Platform build outputs and SDKs
+**/bin/
+**/obj/
+artifacts/
+TestResults/
+*.user
+*.exe
+*.msi
+*.dmg
+*.pfx

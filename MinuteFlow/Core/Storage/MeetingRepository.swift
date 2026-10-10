@@ -61,7 +61,17 @@ struct LocalMeetingRepository: MeetingRepository {
         encoder.dateEncodingStrategy = .iso8601
         self.encoder = encoder
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .custom { value in
+            let string = try value.singleValueContainer().decode(String.self)
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = formatter.date(from: string) { return date }
+            formatter.formatOptions = [.withInternetDateTime]
+            guard let date = formatter.date(from: string) else {
+                throw DecodingError.dataCorruptedError(in: try value.singleValueContainer(), debugDescription: "Invalid meeting date")
+            }
+            return date
+        }
         self.decoder = decoder
     }
 
@@ -242,15 +252,15 @@ struct LocalMeetingRepository: MeetingRepository {
         let audio = directory.appending(path: "audio")
         session.systemAudioURL = try moveKnownFile(
             session.systemAudioURL, fallbacks: matchingFiles(in: audio, suffix: "_系统声.m4a"),
-            to: directory.appending(path: "系统声音.m4a")
+            to: directory.appending(path: session.systemAudioURL?.pathExtension.lowercased() == "wav" ? "系统声音.wav" : "系统声音.m4a")
         )
         session.microphoneAudioURL = try moveKnownFile(
             session.microphoneAudioURL, fallbacks: matchingFiles(in: audio, suffix: "_麦克风.m4a"),
-            to: directory.appending(path: "麦克风.m4a")
+            to: directory.appending(path: session.microphoneAudioURL?.pathExtension.lowercased() == "wav" ? "麦克风.wav" : "麦克风.m4a")
         )
         session.mixedAudioURL = try moveKnownFile(
             session.mixedAudioURL, fallbacks: [directory.appending(path: "audio/mixed.m4a")],
-            to: directory.appending(path: "完整回放.m4a")
+            to: directory.appending(path: session.mixedAudioURL?.pathExtension.lowercased() == "wav" ? "完整回放.wav" : "完整回放.m4a")
         )
         session.transcriptFileURL = try moveKnownFile(
             session.transcriptFileURL, fallbacks: [directory.appending(path: "transcript/segments.json")],
@@ -329,9 +339,33 @@ struct LocalMeetingRepository: MeetingRepository {
     private func decodeSession(in directory: URL) -> MeetingSession? {
         for name in [Self.metadataName, Self.legacyMetadataName] {
             if let data = try? Data(contentsOf: directory.appending(path: name)),
-               let session = try? decoder.decode(MeetingSession.self, from: data) { return session }
+               var session = try? decoder.decode(MeetingSession.self, from: data) {
+                session.systemAudioURL = resolvePortableFile(session.systemAudioURL, in: directory)
+                session.microphoneAudioURL = resolvePortableFile(session.microphoneAudioURL, in: directory)
+                session.mixedAudioURL = resolvePortableFile(session.mixedAudioURL, in: directory)
+                session.transcriptFileURL = resolvePortableFile(session.transcriptFileURL, in: directory)
+                session.summaryFileURL = resolvePortableFile(session.summaryFileURL, in: directory)
+                session.formattedDocumentFileURL = resolvePortableFile(session.formattedDocumentFileURL, in: directory)
+                session.diarizationFileURL = resolvePortableFile(session.diarizationFileURL, in: directory)
+                return session
+            }
         }
         return nil
+    }
+
+    /// Copied meetings use local files only, never another machine's absolute
+    /// paths. Relative names and legacy file URLs are confined to this folder.
+    private func resolvePortableFile(_ value: URL?, in directory: URL) -> URL? {
+        guard let value else { return nil }
+        let raw = value.relativeString.removingPercentEncoding ?? value.relativeString
+        let components = raw.replacingOccurrences(of: "\\", with: "/").split(separator: "/")
+        guard !components.contains(".."), value.scheme == nil || value.scheme == "file" else { return nil }
+        if value.isFileURL, value.standardizedFileURL.path.hasPrefix(directory.standardizedFileURL.path + "/") {
+            return value
+        }
+        let fileName = components.last.map(String.init) ?? value.lastPathComponent
+        guard !fileName.isEmpty, fileName != ".", !fileName.contains(":"), !fileName.contains("\0") else { return nil }
+        return directory.appending(path: fileName)
     }
 
     private func writeMetadata(_ session: MeetingSession, in directory: URL) throws {

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "generatedAt": "2026-10-10T08:25:32.1234567+08:00",
+  "sourceFileName": "完整回放.wav",
+  "method": "localAcousticClustering",
+  "speakerCount": 2,
+  "turns": [
+    { "id": "44444444-4444-4444-8444-444444444444", "startTime": 0.5, "endTime": 4.25, "speakerID": "speaker-1", "confidence": 0.5, "source": "microphone" },
+    { "id": "55555555-5555-4555-8555-555555555555", "startTime": 5.5, "endTime": 9.75, "speakerID": "speaker-2", "confidence": 0.5, "source": "microphone" }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "timelineSampleRate": 48000,
+  "logicalDurationFrames": 480000,
+  "tracks": [
+    {
+      "source": "system",
+      "relativePath": "系统声音.wav",
+      "channelCount": 1,
+      "epochs": [{ "sourceStartFrame": 0, "frameCount": 480000, "logicalStartFrame": 0, "timestampQuality": "callbackClock" }]
+    },
+    {
+      "source": "microphone",
+      "relativePath": "麦克风.wav",
+      "channelCount": 1,
+      "epochs": [{ "sourceStartFrame": 0, "frameCount": 480000, "logicalStartFrame": 0, "timestampQuality": "callbackClock" }]
+    }
+  ]
+}

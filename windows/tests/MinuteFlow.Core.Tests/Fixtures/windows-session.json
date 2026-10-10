@@ -1,0 +1,17 @@
+{
+  "id": "33333333-3333-4333-8333-333333333333",
+  "title": "双平台导入验证",
+  "sourceSelection": "both",
+  "startTime": "2026-10-10T08:15:32.1234567+08:00",
+  "endTime": "2026-10-10T08:18:32.7654321+08:00",
+  "duration": 180.6419754,
+  "recordingStatus": "completed",
+  "systemAudioURL": "系统声音.wav",
+  "microphoneAudioURL": "麦克风.wav",
+  "mixedAudioURL": "完整回放.wav",
+  "mixState": "ready",
+  "transcriptFileURL": "逐字稿.json",
+  "summaryFileURL": "会议纪要.md",
+  "createdAt": "2026-10-10T08:15:32.1234567+08:00",
+  "updatedAt": "2026-10-10T08:18:32.7654321+08:00"
+}

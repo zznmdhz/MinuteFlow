@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../MinuteFlow.Core/MinuteFlow.Core.csproj" />
+    <None Include="Fixtures/**/*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows')) or '$(CompileWindowsChecks)' == 'true'">
+    <DefineConstants>$(DefineConstants);WINDOWS_VALIDATION</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows')) or '$(CompileWindowsChecks)' == 'true'">
+    <Compile Include="../../MinuteFlow.Windows/SettingsStore.cs" Link="Platform/SettingsStore.cs" />
+    <Compile Include="../../MinuteFlow.Windows/AudioRecorder.cs" Link="Platform/AudioRecorder.cs" />
+    <Compile Include="../../MinuteFlow.Windows/RecordingEngine.cs" Link="Platform/RecordingEngine.cs" />
+    <PackageReference Include="NAudio" Version="2.2.1" />
+  </ItemGroup>
+</Project>
