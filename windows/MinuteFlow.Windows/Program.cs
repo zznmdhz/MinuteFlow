@@ -27,7 +27,7 @@ public static class Program
                     {
                         window.Show(); window.UpdateLayout();
                         window.PerformSmokeTest();
-                        Console.WriteLine(JsonSerializer.Serialize(new { success = true, checks = new[] { "WPF-window", "history-and-transcript-controls", "read-only-title", "DPAPI-save-reload", "repository-rename-and-mtime", "synthetic-audio-mix", "settings-dialog" } }));
+                        Console.WriteLine(JsonSerializer.Serialize(new { success = true, checks = new[] { "WPF-window", "history-and-transcript-controls", "1000-row-transcript-virtualization", "virtualized-edit-save-and-original-preservation", "read-only-title", "DPAPI-save-reload", "repository-rename-and-mtime", "synthetic-audio-mix", "settings-dialog" } }));
                         app.Shutdown(0);
                     }
                     catch (Exception e) { Console.Error.WriteLine(e); app.Shutdown(1); }

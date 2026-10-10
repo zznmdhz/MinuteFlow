@@ -13,7 +13,8 @@ for arch in arm64 x86_64; do
     -framework AVFoundation -framework ScreenCaptureKit -framework Security \
     -framework CoreLocation -framework CryptoKit -framework Accelerate
 done
-bundle=artifacts/macos/MinuteFlow.app
+build_stage=$(mktemp -d /tmp/MinuteFlow-macos-build-XXXXXX)
+bundle="$build_stage/MinuteFlow.app"
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 lipo -create .build/release-direct/MinuteFlow-arm64 .build/release-direct/MinuteFlow-x86_64 -output "$bundle/Contents/MacOS/MinuteFlow"
 cp MinuteFlow/Resources/AppIcon.icns "$bundle/Contents/Resources/AppIcon.icns"
@@ -24,6 +25,8 @@ plist="$bundle/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $release_version" "$plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $release_build" "$plist"
 /usr/libexec/PlistBuddy -c 'Set :LSMinimumSystemVersion 14.0' "$plist"
+xattr -cr "$bundle"
 codesign --force --sign - --entitlements MinuteFlow/Supporting/MinuteFlow.entitlements "$bundle"
 codesign --verify --deep --strict "$bundle"
 ditto -c -k --sequesterRsrc --keepParent "$bundle" "artifacts/MinuteFlow-v$release_version-macOS-universal.zip"
+printf 'MACOS_STAGED_APP=%s\n' "$bundle"

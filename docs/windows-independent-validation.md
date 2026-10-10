@@ -27,14 +27,25 @@ dotnet run --project windows/tests/MinuteFlow.Core.Tests -c Release
 |切片|一小时合成静音无请求切片；3秒预览；约700ms停顿定稿；15秒最长块；手动暂停 flush 与重复 flush|Mac .NET 实际执行通过；不是一小时硬件录音|
 |防忘关|30/60分钟边界、有效声音重置、关闭选项、非有限值和迟到 callback|Mac .NET 模拟时钟实际执行通过；不是等待一小时实测|
 |临时服务故障|503 重试同一音频成功、429 三次后停止|Mac .NET 实际执行通过|
-|Windows 凭据|真实 DPAPI 保存/重开；空 Token 更新保留已有值；损坏保护文件可恢复|仅 Windows 执行；Mac SKIP|
-|Windows 文件音频|真实 NAudio 脉冲混音；已知 callback 时间戳重叠裁剪与缺口填零；原轨 hash 不变；取消不覆盖输出；混音头部余量|仅 Windows 执行；Mac SKIP。不包含实际 WASAPI 设备|
-|事后转写|部分已覆盖区间仍补齐剩余；保留用户编辑；取消保留已完成文字且不标完成|仅 Windows 执行；Mac SKIP。HTTP 为固定模拟服务|
-|暂停状态机|无法恢复音频来源时 Resume 报错并保持 paused；不自动恢复录音|仅 Windows 执行；Mac SKIP。不调用真实设备|
+|Windows 凭据|真实 DPAPI 保存/重开；空 Token 更新保留已有值；损坏保护文件可恢复|候选 Windows Actions 实际通过；Mac SKIP|
+|Windows 文件音频|真实 NAudio 脉冲混音；已知 callback 时间戳重叠裁剪与缺口填零；原轨 hash 不变；取消不覆盖输出；混音头部余量|候选 Windows Actions 实际通过；Mac SKIP。不包含实际 WASAPI 设备|
+|事后转写|部分已覆盖区间仍补齐剩余；保留用户编辑；取消保留已完成文字且不标完成|候选 Windows Actions 实际通过；HTTP 为固定模拟服务|
+|暂停状态机|无法恢复音频来源时 Resume 报错并保持 paused；不自动恢复录音|候选 Windows Actions 实际通过。不调用真实设备|
 
-第一轮 Core 检查暴露实际失败：未改标题更新 mtime、迟到音频 callback 让活动时间倒退、MiMo 同时发送 Bearer 与 api-key。后续检查又实际捕获了导入 Mac 人工编辑片段被实时追加改写的问题。修复后的最终 **24/24 Core 行为检查**在 Mac .NET 10 上执行通过，退出状态为 0。
+第一轮 Core 检查暴露实际失败：未改标题更新 mtime、迟到音频 callback 让活动时间倒退、MiMo 同时发送 Bearer 与 api-key。后续检查又实际捕获了导入 Mac 人工编辑片段被实时追加改写的问题。修复后的第一批 **24/24 Core 行为检查**在 Mac .NET 10 上执行通过，退出状态为 0。
 
-另有 **10 项 Windows 条件检查**。独立跨编译曾捕获 NAudio `MMDeviceCollection` 不实现 IDisposable 的真实编译错误；实现者修复后跨编译成功，0 警告/0 错误。此构建结果不等于 Windows 运行结果。GitHub Windows 执行全部检查时应得到 **34/34**；发布时必须引用真实 Actions 日志，未执行或失败时不得填通过。
+最后冻结前增加一项42小时历史录音时长格式回归，检查 `42:25:15`、负数/NaN 安全显示及列表/时间轴一致性。最新 **25/25 Core检查**已在本机实际通过，退出状态0；最终检查数量为 **25 项 Core＋10 项 Windows专用＝35 项**。第一轮候选的34项结果保留其真实数量，最后提交必须执行35项。
+
+另有 **10 项 Windows 条件检查**。独立跨编译曾捕获 NAudio `MMDeviceCollection` 不实现 IDisposable 的真实编译错误；实现者修复后跨编译成功，0 警告/0 错误。随后在下列真实 Windows Actions 候选运行中全部执行，日志明确 **34/34 behavioral checks passed**，10 项 Windows 条件检查均 PASS，无 SKIP。
+
+## 已核验的 Windows 候选运行
+
+- [Actions run 38029184421，Windows job 114146340044](https://github.com/zznmdhz/MinuteFlow/actions/runs/38029184421/job/114146340044)。提交：`bf3de90169281772fcf6b19da1f8be6d498e5105`；分支：`codex/windows-dual-platform`。
+- 执行系统：Windows Server 2025 / 10.0.26100；SDK：.NET 10.0.401。不是用户的 Windows 10/11 音频电脑。
+- 日志版本门禁：两个平台 `0.13.0 (16)`。34 项真实行为检查全部通过。
+- `build-windows.ps1` 成功完成自包含 win-x64 发布、已发布 EXE 的 WPF/配置/文件音频 smoke、自包含 ZIP、Inno Setup 安装包编译、临时目录安装、安装后 EXE smoke 与卸载门禁，步骤结论 success。
+- 已上传 Windows ZIP 和 Setup.exe 两份候选产物。此时尚不是最终 tag 的成对 Release。
+- 候选通过后又补了逐轨启动降级、静音无 callback 定稿、虚拟化逐字稿及更严格的 UI smoke 等改动，必须让最终冻结提交重新经过双平台工作流；不能用上述旧提交运行替代最新代码验证。
 
 ## 独立审查发现与修复要求
 
@@ -45,6 +56,7 @@ dotnet run --project windows/tests/MinuteFlow.Core.Tests -c Release
 |P1|Windows 说话人时间轴缺 Mac required 字段，包括 result version/date/source/count、turn id/confidence|补齐共享 JSON schema 并检查 Mac 解码|
 |P1|延迟包与现存音轨重叠仍追加导致轨道增长；混音扩大有效录音时长|已知时间戳包的真实文件检查，保留原片与裁重叠|
 |P1|原始 float32 WAV 约6.2小时达到 RIFF 4GiB 容量限制|已改 PCM16，加入10小时容量自动暂停与拒绝恢复超限会话；需实机长时测试|
+|P1|导入/重混超长音频仍可能生成超限 WAV，转换失败前原文件元数据未登记|混音10小时/非有限时轴预检保护旧输出与输入；导入先登记原文件，再可选混音；已有 Windows 混音取消检查增加42小时/NaN预检断言，不增加检查总数|
 |P1|两路高音量相加硬裁剪，失去峰值余量|同时0.9幅度的合成音频检查输出峰值≤0.8|
 |P1|停止时混音失败可能留下错误 saving 状态|原轨保留，失败 metadata 可重新生成完整回放|
 |P1|删除会议后才保存待编辑内容，访问已移走目录|删除前先保存并结束编辑，再清空选择|
@@ -55,7 +67,7 @@ dotnet run --project windows/tests/MinuteFlow.Core.Tests -c Release
 |P2|设备丢失/容量上限时恢复失败，仍提前清除暂停状态|只在 Recorder.Resume 成功后清除 paused，Windows 条件检查|
 |P2|网络暂时错误无有限重试，待转写数据积压|503/429 预算检查，401无重试|
 
-上述问题已逐项反馈实现 agent，并确认修复源码已经落地。Core 问题已有实际通过结果；音频、DPAPI、补全与 Windows 状态机检查仍以真实 Windows Actions 日志为运行证据。硬件相关行为仍保留实机门禁。
+上述问题已逐项反馈实现 agent，并确认修复源码已经落地。Core、合成文件音频、DPAPI、补全与 Windows 状态机已有上述候选日志实际通过结果。最新代码仍需冻结后复跑；硬件相关行为仍保留实机门禁。
 
 ## 仍需 Windows 实机验证
 

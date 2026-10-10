@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Reflection;
 using System.Windows;
@@ -23,6 +24,7 @@ public partial class MainWindow : Window
     private readonly System.Windows.Forms.NotifyIcon? tray;
     private MeetingSession? current;
     private readonly List<TranscriptSegment> transcript = [];
+    private readonly ObservableCollection<TranscriptRow> transcriptRows = [];
     private RecordingEngine? engine;
     private CancellationTokenSource? operation;
     private Task? operationTask;
@@ -37,6 +39,7 @@ public partial class MainWindow : Window
     {
         this.smoke = smoke; repository = new MeetingRepository(Path.Combine(root, "Sessions")); settings = new SettingsStore(root); client = new ModelClient(http);
         InitializeComponent();
+        TranscriptRows.ItemsSource = transcriptRows;
         VersionLabel.Text = "v" + (Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.13.0");
         var context = new ContextMenu();
         AddMenu(context, "重命名会议", BeginTitleEdit); AddMenu(context, "在文件资源管理器中显示", () => RevealMeeting()); AddMenu(context, "删除会议（可恢复）", DeleteCurrent);
@@ -96,7 +99,7 @@ public partial class MainWindow : Window
         var selectedId = session.Id;
         FlushEdits(); CommitTitle(); StopPlaying(); session = repository.List().FirstOrDefault(s => s.Id == selectedId) ?? session; current = session; loading = true;
         if (History.ItemsSource is List<MeetingSession> meetings) History.SelectedItem = meetings.FirstOrDefault(s => s.Id == selectedId);
-        transcript.Clear(); transcript.AddRange(repository.LoadTranscript(session.Id));
+        transcript.Clear(); transcriptRows.Clear(); transcript.AddRange(repository.LoadTranscript(session.Id));
         SummaryEditor.Text = repository.LoadDocument(session.Id, "会议纪要.md") ?? "";
         DocumentEditor.Text = repository.LoadDocument(session.Id, "AI排版文稿.md") ?? "";
         TitleDisplay.Text = session.Title; TitleEditor.Visibility = Visibility.Collapsed; TitleDisplay.Visibility = Visibility.Visible;
@@ -107,7 +110,7 @@ public partial class MainWindow : Window
     private void NewRecording(object sender, RoutedEventArgs e)
     {
         if (engine is not null || operation is not null) return;
-        FlushEdits(); CommitTitle(); StopPlaying(); current = null; transcript.Clear(); preview = ""; lastFinalTime = 0;
+        FlushEdits(); CommitTitle(); StopPlaying(); current = null; transcript.Clear(); transcriptRows.Clear(); preview = ""; lastFinalTime = 0;
         loading = true; History.SelectedItem = null; SummaryEditor.Text = ""; DocumentEditor.Text = ""; loading = false;
         TitleDisplay.Text = "新录音"; TitleDisplay.Visibility = Visibility.Visible; TitleEditor.Visibility = Visibility.Collapsed;
         RenderTranscript(); RefreshStatus();
@@ -130,14 +133,14 @@ public partial class MainWindow : Window
             dirtyTranscript = true; ScheduleSave(); RenderTranscript();
         });
         engine.Notice += message => Dispatcher.BeginInvoke(() => Notice(message, true));
-        try { engine.Start(); MicLabel.Text = "麦克风 · " + engine.Recorder.MicrophoneName; ReloadHistory(); Notice("录音已开始。原始音轨持续保存，AI 失败也不会中断录音。"); }
+        try { engine.Start(); MicLabel.Text = current.MicrophoneAudioURL is null ? "麦克风 · 未启用" : "麦克风 · " + engine.Recorder.MicrophoneName; foreach (ComboBoxItem source in SourcePicker.Items) if (source.Tag as string == current.SourceSelection) SourcePicker.SelectedItem = source; ReloadHistory(); Notice("录音已开始。原始音轨持续保存，AI 失败也不会中断录音。"); }
         catch (Exception error) { await engine.DisposeAsync(); engine = null; current.RecordingStatus = "failed"; current.UpdatedAt = DateTimeOffset.Now; repository.Save(current); ReloadHistory(); Notice("无法开始录音：" + error.Message + "。请在设置检测音频设备及麦克风权限。"); }
         RefreshStatus();
     }
     private void PauseRecording(object sender, RoutedEventArgs e)
     {
         if (engine is null) return;
-        try { if (engine.IsPaused) engine.Resume(); else engine.Pause(); RefreshStatus(); } catch (Exception error) { Notice(error.Message); }
+        try { if (engine.IsPaused) engine.Resume(); else engine.Pause(); RefreshStatus(); RenderTranscript(); } catch (Exception error) { Notice(error.Message); }
     }
     private async void StopRecording(object sender, RoutedEventArgs e) => await StopRecordingAsync();
     private async Task StopRecordingAsync()
@@ -166,7 +169,7 @@ public partial class MainWindow : Window
         if (!IsInitialized) return;
         var active = engine is not null; var busy = operation is not null;
         var duration = active ? engine!.Recorder.Elapsed : current?.Duration ?? 0;
-        TimerLabel.Text = TimeSpan.FromSeconds(duration).ToString(@"hh\:mm\:ss");
+        TimerLabel.Text = MeetingTime.Format(duration);
         StatusLabel.Text = active ? engine!.IsPaused ? "已暂停" : "正在录音" : current is null ? "准备就绪" : current.RecordingStatus == "interrupted" ? "已恢复录音" : "已完成";
         StartButton.IsEnabled = !active && !busy; SourcePicker.IsEnabled = !active && !busy; History.IsEnabled = !active && !busy; NewButton.IsEnabled = !active && !busy;
         PauseButton.IsEnabled = active && !busy; StopButton.IsEnabled = active && !busy; PauseButton.Content = engine?.IsPaused == true ? "恢复" : "暂停";
@@ -176,6 +179,7 @@ public partial class MainWindow : Window
         BatchTitleButton.IsEnabled = !active && !busy; CancelButton.IsEnabled = busy && !active;
         WorkProgress.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
         SystemMeter.Value = active && !engine!.IsPaused && duration - engine.LastSystemSample < 0.5 ? Math.Min(1, engine.SystemLevel * 5) : 0; MicMeter.Value = active && !engine!.IsPaused && duration - engine.LastMicrophoneSample < 0.5 ? Math.Min(1, engine.MicrophoneLevel * 5) : 0;
+        SystemMeter.IsEnabled = current?.SystemAudioURL is not null; MicMeter.IsEnabled = current?.MicrophoneAudioURL is not null;
         if (playbackFile is not null) { PlaybackLabel.Text = $"{playbackFile.CurrentTime:hh\\:mm\\:ss} / {playbackFile.TotalTime:hh\\:mm\\:ss}"; PlaybackSlider.Value = playbackFile.TotalTime.TotalSeconds <= 0 ? 0 : playbackFile.CurrentTime.TotalSeconds / playbackFile.TotalTime.TotalSeconds; }
         if (active && !busy && engine!.ShouldAutoPause)
         {
@@ -187,7 +191,7 @@ public partial class MainWindow : Window
         {
             engine.Pause(); BringToFront(); MessageBox.Show(this, "本次录音达到 10 小时，已触发 WAV 容量保护并暂停。请结束保存，再新建录音。", "长录音保护", MessageBoxButton.OK, MessageBoxImage.Information);
         }
-        if (tray is not null) tray.Text = active ? $"MinuteFlow · {(engine!.IsPaused ? "已暂停" : "正在录音")} {TimeSpan.FromSeconds(duration):hh\\:mm\\:ss}" : "MinuteFlow";
+        if (tray is not null) tray.Text = active ? $"MinuteFlow · {(engine!.IsPaused ? "已暂停" : "正在录音")} {MeetingTime.Format(duration)}" : "MinuteFlow";
     }
     private void Notice(string message, bool throttle = false)
     {
@@ -196,20 +200,31 @@ public partial class MainWindow : Window
     }
     private void RenderTranscript()
     {
-        TranscriptRows.Children.Clear();
-        if (transcript.Count == 0) { TranscriptRows.Children.Add(new TextBlock { Text = "当前会议还没有逐字稿；可实时识别或补全已保存的录音。", Foreground = Brushes.Gray, TextWrapping = TextWrapping.Wrap }); return; }
-        foreach (var segment in transcript)
+        EmptyTranscriptLabel.Visibility = transcript.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        var mode = TranscriptMode.SelectedIndex;
+        var readOnly = mode != 1 || operation is not null || engine is not null && !engine.IsPaused;
+        for (var index = 0; index < transcript.Count; index++)
         {
-            var row = new StackPanel { Margin = new Thickness(0, 0, 0, 16) };
+            var segment = transcript[index];
             var speaker = segment.SpeakerID is not null && current?.SpeakerNames?.TryGetValue(segment.SpeakerID, out var renamed) == true ? renamed : segment.SpeakerID;
-            var label = new TextBlock { Text = segment.Label.Replace(segment.SpeakerID ?? "\0", speaker ?? "\0"), Foreground = Brushes.DodgerBlue, FontWeight = FontWeights.SemiBold, Cursor = Cursors.Hand };
-            label.MouseLeftButtonDown += (_, e) => { if (e.ClickCount == 2 && engine is null && operation is null) RenameSpeaker(segment); else if (e.ClickCount == 1) PlayAt(segment.StartTime); };
-            label.ToolTip = "单击跳转回放；双击修改说话人显示名称";
-            var mode = TranscriptMode.SelectedIndex;
-            var editor = new TextBox { Text = mode == 0 ? segment.OriginalText ?? segment.Text : mode == 2 ? segment.NormalizedText ?? segment.Text : segment.Text, IsReadOnly = mode != 1 || operation is not null, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, BorderThickness = new Thickness(0), Background = Brushes.Transparent, FontSize = 15, Padding = new Thickness(0, 7, 0, 0), VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-            editor.TextChanged += (_, _) => { if (loading || mode != 1 || operation is not null || segment.Text == editor.Text) return; segment.Text = editor.Text; segment.UserEdited = true; segment.NormalizedText = null; dirtyTranscript = true; ScheduleSave(); };
-            row.Children.Add(label); row.Children.Add(editor); TranscriptRows.Children.Add(row);
+            speaker = speaker?.Replace("system-speaker-", "电脑 · 说话人 ").Replace("speaker-", "说话人 ");
+            var label = segment.Label.Replace(segment.SpeakerID ?? "\0", speaker ?? "\0");
+            TranscriptRow row;
+            if (index < transcriptRows.Count && transcriptRows[index].Segment.Id == segment.Id) row = transcriptRows[index];
+            else
+            {
+                row = new TranscriptRow(segment, edited => { if (loading || current is null) return; edited.UserEdited = true; edited.NormalizedText = null; dirtyTranscript = true; ScheduleSave(); });
+                transcriptRows.Insert(index, row);
+            }
+            row.Update(segment, label, mode == 0 ? segment.OriginalText ?? segment.Text : mode == 2 ? segment.NormalizedText ?? segment.Text : segment.Text, readOnly);
         }
+        while (transcriptRows.Count > transcript.Count) transcriptRows.RemoveAt(transcriptRows.Count - 1);
+    }
+    private void TranscriptLabelClicked(object sender, MouseButtonEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not TranscriptRow row) return;
+        if (e.ClickCount == 2 && engine is null && operation is null) RenameSpeaker(row.Segment);
+        else if (e.ClickCount == 1) PlayAt(row.Segment.StartTime);
     }
     private void TranscriptModeChanged(object sender, SelectionChangedEventArgs e) { if (IsInitialized) { FlushEdits(); RenderTranscript(); } }
     private void ScheduleSave() { save.Stop(); save.Start(); }
@@ -385,10 +400,22 @@ public partial class MainWindow : Window
         {
             if (!File.Exists(path)) throw new FileNotFoundException("导入文件不存在。", path);
             using var reader = new AudioFileReader(path); var meeting = repository.Create(Path.GetFileNameWithoutExtension(path), "microphone");
-            meeting.MicrophoneAudioURL = "原始录音" + Path.GetExtension(path).ToLowerInvariant(); var copied = repository.ResolvePath(meeting.Id, meeting.MicrophoneAudioURL); File.Copy(path, copied, false);
+            meeting.MicrophoneAudioURL = "原始录音" + Path.GetExtension(path).ToLowerInvariant(); var copied = repository.ResolvePath(meeting.Id, meeting.MicrophoneAudioURL); await Task.Run(() => File.Copy(path, copied, false));
             meeting.Duration = reader.TotalTime.TotalSeconds; meeting.RecordingStatus = "completed"; meeting.EndTime = meeting.StartTime.AddSeconds(meeting.Duration);
-            var mixed = Path.Combine(repository.DirectoryFor(meeting.Id), "完整回放.wav"); await Task.Run(() => AudioFiles.Mix(null, copied, mixed, meeting.Duration, token), token);
-            meeting.MixedAudioURL = "完整回放.wav"; meeting.MixState = "ready"; repository.Save(meeting); SelectMeeting(meeting); ReloadHistory(); Notice("录音已复制到新的会议目录，可点击补全整段录音生成逐字稿。");
+            // Register the copied original before any optional conversion. A
+            // failure or cancellation must still leave a playable history entry.
+            meeting.MixState = "queued"; meeting.UpdatedAt = DateTimeOffset.Now; repository.Save(meeting); SelectMeeting(meeting); ReloadHistory();
+            try
+            {
+                var mixed = Path.Combine(repository.DirectoryFor(meeting.Id), "完整回放.wav"); await Task.Run(() => AudioFiles.Mix(null, copied, mixed, meeting.Duration, token), token);
+                meeting.MixedAudioURL = "完整回放.wav"; meeting.MixState = "ready"; meeting.UpdatedAt = DateTimeOffset.Now; repository.Save(meeting); current = meeting;
+                Notice("录音已复制到新的会议目录，可点击补全整段录音生成逐字稿。");
+            }
+            catch (Exception error)
+            {
+                meeting.MixState = "failed"; meeting.MixMessage = error is OperationCanceledException ? "完整回放生成已取消，原始录音已保留。" : error.Message; meeting.UpdatedAt = DateTimeOffset.Now; repository.Save(meeting); current = meeting;
+                Notice("原始录音已导入，可从历史会议播放或转写；完整回放未生成：" + meeting.MixMessage);
+            }
         });
     }
     private async void OnClosing(object? sender, CancelEventArgs e)
@@ -419,10 +446,44 @@ public partial class MainWindow : Window
         BeginTitleEdit(); if (TitleEditor.Visibility != Visibility.Visible) throw new Exception("Double-click edit unavailable."); TitleEditor.Text = "测试会议更名"; CommitTitle();
         if (current?.Title != "测试会议更名" || Path.GetFileName(repository.DirectoryFor(meeting.Id)) != current.Title) throw new Exception("Rename did not synchronize.");
         var before = File.GetLastWriteTimeUtc(Path.Combine(repository.DirectoryFor(meeting.Id), MeetingRepository.MetadataName)); SelectMeeting(current); FlushEdits(); if (File.GetLastWriteTimeUtc(Path.Combine(repository.DirectoryFor(meeting.Id), MeetingRepository.MetadataName)) != before) throw new Exception("Browsing changed mtime.");
+        for (var index = 0; index < 1000; index++) transcript.Add(new TranscriptSegment { StartTime = index, EndTime = index + 1, Text = "用于验证长逐字稿的可见行复用。", OriginalText = "用于验证长逐字稿的可见行复用。", Source = "microphone" });
+        RenderTranscript(); TranscriptRows.BringIntoView(); TranscriptRows.ScrollIntoView(transcriptRows[0]); UpdateLayout(); Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        var realized = Enumerable.Range(0, transcriptRows.Count).Count(i => TranscriptRows.ItemContainerGenerator.ContainerFromIndex(i) is not null);
+        if (realized is < 1 or > 100 || TranscriptRows.ItemContainerGenerator.ContainerFromIndex(0) is null) throw new Exception("Long transcript must render a nonzero bounded visible viewport.");
+        TranscriptRows.ScrollIntoView(transcriptRows[^1]); UpdateLayout(); Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        realized = Enumerable.Range(0, transcriptRows.Count).Count(i => TranscriptRows.ItemContainerGenerator.ContainerFromIndex(i) is not null);
+        if (realized is < 1 or > 100 || TranscriptRows.ItemContainerGenerator.ContainerFromIndex(transcriptRows.Count - 1) is null || TranscriptRows.ItemContainerGenerator.ContainerFromIndex(0) is not null) throw new Exception("Scrolling a long transcript did not recycle offscreen controls.");
+        TranscriptRows.ScrollIntoView(transcriptRows[0]); UpdateLayout(); Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        transcriptRows[0].DisplayText = "手动修改已保存。"; FlushEdits();
+        if (repository.LoadTranscript(meeting.Id)[0].Text != "手动修改已保存。" || transcript[0].OriginalText != "用于验证长逐字稿的可见行复用。") throw new Exception("Virtualized editing lost original text or saved edits.");
         settings.Save(new ModelConfiguration(), "smoke-test-not-a-real-token"); var reloaded = new SettingsStore(settings.Root); if (reloaded.Configuration.Token != "smoke-test-not-a-real-token") throw new Exception("DPAPI reload failed.");
         using (var writer = new WaveFileWriter(repository.ResolvePath(meeting.Id, meeting.MicrophoneAudioURL), new WaveFormat(48000, 16, 1))) { var tone = Enumerable.Range(0, 4800).Select(i => (float)(0.1 * Math.Sin(i * Math.PI * 2 * 440 / 48000))).ToArray(); writer.WriteSamples(tone, 0, tone.Length); }
         var output = Path.Combine(repository.DirectoryFor(meeting.Id), "完整回放.wav"); AudioFiles.Mix(null, repository.ResolvePath(meeting.Id, meeting.MicrophoneAudioURL), output, 0.1); using (var reader = new WaveFileReader(output)) if (Math.Abs(reader.TotalTime.TotalSeconds - 0.1) > 0.005) throw new Exception("Mix duration incorrect.");
         var dialog = new SettingsWindow(settings, client, false); dialog.Show(); dialog.UpdateLayout(); dialog.Close();
+    }
+}
+
+public sealed class TranscriptRow : INotifyPropertyChanged
+{
+    private readonly Action<TranscriptSegment> edited;
+    private string label = "", displayText = "";
+    private bool readOnly;
+    public TranscriptSegment Segment { get; private set; }
+    public string Label => label;
+    public bool IsReadOnly => readOnly;
+    public string DisplayText
+    {
+        get => displayText;
+        set { if (readOnly || value == displayText) return; displayText = value; Segment.Text = value; edited(Segment); PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayText))); }
+    }
+    public event PropertyChangedEventHandler? PropertyChanged;
+    public TranscriptRow(TranscriptSegment segment, Action<TranscriptSegment> edited) { Segment = segment; this.edited = edited; }
+    public void Update(TranscriptSegment segment, string nextLabel, string text, bool isReadOnly)
+    {
+        Segment = segment;
+        if (label != nextLabel) { label = nextLabel; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Label))); }
+        if (displayText != text) { displayText = text; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayText))); }
+        if (readOnly != isReadOnly) { readOnly = isReadOnly; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsReadOnly))); }
     }
 }
 

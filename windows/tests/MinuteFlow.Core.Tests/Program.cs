@@ -176,6 +176,19 @@ Check("Both platform dates and relative audio paths deserialize without time zon
     Equal("完整回放.wav", session.MixedAudioURL);
 });
 
+Check("Imported long meetings keep full hours in list and timeline without 24-hour wrap", () =>
+{
+    var duration = 42 * 3600 + 25 * 60 + 15;
+    Equal("42:25:15", MeetingTime.Format(duration));
+    Equal("00:00:00", MeetingTime.Format(-1));
+    Equal("00:00:00", MeetingTime.Format(double.NaN));
+    Equal("00:00:00", MeetingTime.Format(double.PositiveInfinity));
+    var meeting = new MeetingSession { Duration = duration };
+    True(meeting.Description.EndsWith("42:25:15"), "History list wrapped to a 24-hour clock.");
+    var segment = new TranscriptSegment { StartTime = duration, Source = "microphone" };
+    True(segment.Label.StartsWith("42:25:15"), "Transcript timeline wrapped to a 24-hour clock.");
+});
+
 Check("PCM WAV header and amplitude clipping produce a valid mono 16-bit audio file", () =>
 {
     var wav = WavePcm.Encode16Bit([-2, -1, 0, 1, 2], 16000);

@@ -1,4 +1,4 @@
-# MinuteFlow for Mac
+# MinuteFlow for macOS and Windows
 
 [Simplified Chinese](README.md) | English
 
@@ -9,6 +9,14 @@ segments to a user-configured AI service for transcription and meeting notes.
 
 ## Highlights
 
+- v0.13.0 pairs the existing Swift macOS app with a new WPF/.NET Windows app.
+  Both derive their release version from `version.json` and ship together only
+  after both validation jobs pass. Windows includes its runtime and provides a
+  portable package and per-user installer. This first Windows release is a
+  preview: hardware capture and long-duration real-world tests remain pending.
+- Windows uses PCM16 WAV and a ten-hour recording capacity guard. Automatic
+  meeting location is currently available on Mac only. See `windows/README.md`
+  and the platform feature matrix for the actual differences and verification.
 - v0.12.1: saved meeting titles are read-only until double-clicked. Viewing,
   switching meetings, and quitting no longer rewrite unchanged transcripts;
   identical transcript, summary, and formatted-document saves preserve dates.

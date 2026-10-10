@@ -3,6 +3,15 @@ using System.Text.Json.Serialization;
 
 namespace MinuteFlow.Core;
 
+public static class MeetingTime
+{
+    public static string Format(double seconds)
+    {
+        var total = (long)Math.Clamp(double.IsFinite(seconds) ? seconds : 0, 0, TimeSpan.MaxValue.TotalSeconds);
+        return $"{total / 3600:00}:{total % 3600 / 60:00}:{total % 60:00}";
+    }
+}
+
 public sealed class MeetingSession
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -28,7 +37,7 @@ public sealed class MeetingSession
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.Now;
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
-    [JsonIgnore] public string Description => $"{StartTime.LocalDateTime:yyyy-MM-dd HH:mm} · {TimeSpan.FromSeconds(Duration):hh\\:mm\\:ss}";
+    [JsonIgnore] public string Description => $"{StartTime.LocalDateTime:yyyy-MM-dd HH:mm} · {MeetingTime.Format(Duration)}";
 }
 
 public sealed class TranscriptSegment
@@ -46,7 +55,7 @@ public sealed class TranscriptSegment
     public List<TranscriptRecognitionFragment>? RecognitionFragments { get; set; }
     public bool UserEdited { get; set; }
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
-    [JsonIgnore] public string Label => $"{TimeSpan.FromSeconds(Math.Max(0, StartTime)):hh\\:mm\\:ss}  ·  {SpeakerID ?? (Source == "system" ? "系统声音" : Source == "mixed" ? "完整录音" : "麦克风")}";
+    [JsonIgnore] public string Label => $"{MeetingTime.Format(StartTime)}  ·  {SpeakerID ?? (Source == "system" ? "系统声音" : Source == "mixed" ? "完整录音" : "麦克风")}";
 }
 
 public sealed class TranscriptRecognitionFragment

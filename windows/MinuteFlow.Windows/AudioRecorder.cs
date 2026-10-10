@@ -37,19 +37,40 @@ public sealed class AudioRecorder : IDisposable
             try
             {
                 using var enumerator = new MMDeviceEnumerator();
+                var errors = new List<string>();
                 if (session.SourceSelection is "both" or "system")
                 {
-                    var device = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
-                    Add(new WasapiLoopbackCapture(device), repository.ResolvePath(session.Id, session.SystemAudioURL), "system");
+                    try
+                    {
+                        var device = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+                        Add(new WasapiLoopbackCapture(device), repository.ResolvePath(session.Id, session.SystemAudioURL), "system");
+                    }
+                    catch (Exception error) { session.SystemAudioURL = null; errors.Add("系统声音：" + error.Message); }
                 }
                 if (session.SourceSelection is "both" or "microphone")
                 {
-                    var device = string.IsNullOrWhiteSpace(microphoneDeviceId) ? enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Multimedia) : enumerator.GetDevice(microphoneDeviceId);
-                    MicrophoneName = device.FriendlyName;
-                    Add(new WasapiCapture(device), repository.ResolvePath(session.Id, session.MicrophoneAudioURL), "microphone");
+                    try
+                    {
+                        var device = string.IsNullOrWhiteSpace(microphoneDeviceId) ? enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Multimedia) : enumerator.GetDevice(microphoneDeviceId);
+                        MicrophoneName = device.FriendlyName;
+                        Add(new WasapiCapture(device), repository.ResolvePath(session.Id, session.MicrophoneAudioURL), "microphone");
+                    }
+                    catch (Exception error) { session.MicrophoneAudioURL = null; errors.Add("麦克风：" + error.Message); }
                 }
                 clock.Restart(); paused = false;
-                foreach (var item in captures) item.Capture.StartRecording();
+                foreach (var item in captures.ToArray())
+                {
+                    try { item.Capture.StartRecording(); }
+                    catch (Exception error)
+                    {
+                        activeSources.Remove(item.Source); captures.Remove(item); item.Capture.Dispose(); item.Track.Dispose();
+                        if (item.Source == "system") session.SystemAudioURL = null; else session.MicrophoneAudioURL = null;
+                        errors.Add((item.Source == "system" ? "系统声音" : "麦克风") + "：" + error.Message);
+                    }
+                }
+                if (captures.Count == 0) throw new InvalidOperationException("没有可用的录音设备。" + string.Join("；", errors));
+                session.SourceSelection = captures.Count > 1 ? "both" : captures[0].Source;
+                if (errors.Count > 0) Faulted?.Invoke("部分录音设备不可用，已使用可用音轨继续录音。" + string.Join("；", errors));
                 silencePadding = new System.Threading.Timer(_ =>
                 {
                     try
@@ -186,16 +207,20 @@ public static class AudioFiles
         var files = new[] { system, microphone }.Where(p => p is not null && File.Exists(p)).Cast<string>().ToArray();
         if (files.Length == 0) throw new FileNotFoundException("没有可用的录音文件。");
         if (files.Any(p => string.Equals(Path.GetFullPath(p), Path.GetFullPath(output), StringComparison.OrdinalIgnoreCase))) throw new IOException("完整回放不能覆盖原始音轨。");
+        if (!double.IsFinite(logicalDuration) || logicalDuration > TimeSpan.FromHours(10).TotalSeconds) throw new InvalidDataException("录音超过经典 WAV 的安全容量范围（10 小时），不能生成此格式的完整回放；原始音频仍可直接播放。");
         var temporary = output + ".tmp.wav";
-        var readers = files.Select(p => new AudioFileReader(p)).ToArray();
+        var readers = new List<AudioFileReader>();
         try
         {
+            foreach (var file in files) readers.Add(new AudioFileReader(file));
+            var duration = logicalDuration > 0 ? logicalDuration : readers.Max(r => r.TotalTime.TotalSeconds);
+            if (duration > TimeSpan.FromHours(10).TotalSeconds) throw new InvalidDataException("录音超过经典 WAV 的安全容量范围（10 小时），请直接播放原始音频。");
             var providers = readers.Select(r => Mono48(r)).ToArray();
             using (var writer = new WaveFileWriter(temporary, new WaveFormat(AudioRecorder.SampleRate, 16, 1)))
             {
                 var buffer = new float[AudioRecorder.SampleRate]; var buffers = providers.Select(_ => new float[buffer.Length]).ToArray();
                 var pcm = new byte[buffer.Length * 2];
-                long remaining = (long)((logicalDuration > 0 ? logicalDuration : readers.Max(r => r.TotalTime.TotalSeconds)) * AudioRecorder.SampleRate);
+                long remaining = (long)(duration * AudioRecorder.SampleRate);
                 while (remaining > 0)
                 {
                     token.ThrowIfCancellationRequested(); var wanted = (int)Math.Min(remaining, buffer.Length); Array.Clear(buffer);

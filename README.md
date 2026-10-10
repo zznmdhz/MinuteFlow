@@ -1,8 +1,18 @@
-# MinuteFlow for Mac
+# MinuteFlow — macOS 与 Windows
 
 [English](README_EN.md) | 简体中文
 
-MinuteFlow 是一款 macOS 14+ 原生会议录音与转写工具。原始录音保存在本机；开启 AI 功能后，应用按需向用户配置的服务发送短音频片段，并可根据逐字稿生成会议纪要。
+MinuteFlow 是一款本地会议录音与转写工具：Mac 使用 Swift 原生应用，Windows 使用 WPF/.NET 原生应用。原始录音保存在本机；开启 AI 功能后，应用按需向用户配置的服务发送短音频片段，并可根据逐字稿生成会议纪要。
+
+## v0.13.0 双平台更新
+
+- 一个版本号同时提供 Mac universal ZIP、Windows x64 安装程序与便携 ZIP。
+- Windows 新增双路录音/混音、实时及事后识别、凭据保存、会议管理、AI 文稿、说话人标签和静音防忘关；详细用法和平台差异见 [Windows 说明](windows/README.md)。
+- Mac 新增 Windows 数据兼容：相对 WAV 路径、小数秒日期、混音及说话人时间轴；原有录音功能继续保留。
+- 首个 Windows 版本为 preview；真实声卡/麦克风、设备切换与长时间使用仍需目标机器验证。自动地点记录暂为 Mac 功能。
+- [完整迁移计划](docs/windows-migration-plan.md)、[功能矩阵](docs/platform-feature-matrix.md)、[独立验证记录](docs/windows-independent-validation.md)。
+
+后续更新运行 `node scripts/set-version.mjs 0.13.1 preview`（完成正式验收后可选择 `stable`），同步两端版本。一份需求核对两端实现；同一 Git tag 在两端自动构建、检查并打包，全部通过才发布。
 
 ## 开源与版本历史
 

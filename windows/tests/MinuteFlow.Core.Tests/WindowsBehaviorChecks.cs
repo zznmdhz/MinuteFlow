@@ -62,7 +62,7 @@ static class WindowsBehaviorChecks
             True(originalMic.AsSpan().SequenceEqual(SHA256.HashData(File.ReadAllBytes(mic))), "Microphone original changed.");
             True(originalSystem.AsSpan().SequenceEqual(SHA256.HashData(File.ReadAllBytes(system))), "System original changed.");
         });
-        yield return Sync("Windows mix cancellation retains existing playback and removes temporary output", () =>
+        yield return Sync("Windows mix cancellation and capacity checks retain existing playback", () =>
         {
             using var temp = new Scratch();
             var original = Path.Combine(temp.Path, "source.wav");
@@ -73,6 +73,12 @@ static class WindowsBehaviorChecks
             Throws<OperationCanceledException>(() => AudioFiles.Mix(original, null, playback, 1, cts.Token));
             True(File.ReadAllBytes(playback).AsSpan().SequenceEqual(new byte[] { 5, 6, 7 }), "Cancelled mix replaced previous playback.");
             True(!File.Exists(playback + ".tmp.wav"), "Cancelled mix left temporary WAV.");
+            var originalHash = SHA256.HashData(File.ReadAllBytes(original));
+            Throws<InvalidDataException>(() => AudioFiles.Mix(original, null, playback, 42 * 3600));
+            Throws<InvalidDataException>(() => AudioFiles.Mix(original, null, playback, double.NaN));
+            True(File.ReadAllBytes(playback).AsSpan().SequenceEqual(new byte[] { 5, 6, 7 }), "Oversized or invalid timeline replaced previous playback.");
+            True(originalHash.AsSpan().SequenceEqual(SHA256.HashData(File.ReadAllBytes(original))), "Capacity rejection changed source recording.");
+            True(!File.Exists(playback + ".tmp.wav"), "Capacity rejection created temporary output.");
         });
         yield return Sync("Windows mixer rejects overwriting an original audio file", () =>
         {
