@@ -17,14 +17,17 @@ public sealed class ModelClient
         if (!Uri.TryCreate(value + "/" + suffix, UriKind.Absolute, out var endpoint) || endpoint.Scheme != "https") throw new ArgumentException("请输入 HTTPS 服务地址。");
         return endpoint;
     }
-    public async Task<string> TranscribeAsync(byte[] wav, ModelConfiguration configuration, CancellationToken cancellationToken = default)
+    public Task<string> TranscribeLiveAsync(byte[] wav, ModelConfiguration configuration, Action<string> onPartial, CancellationToken cancellationToken = default)
+        => TranscribeAsync(wav, configuration, cancellationToken, onPartial);
+
+    public async Task<string> TranscribeAsync(byte[] wav, ModelConfiguration configuration, CancellationToken cancellationToken = default, Action<string>? onPartial = null)
     {
         if (!configuration.IsConfigured) throw new InvalidOperationException("请先保存服务地址、Token 和语音模型名称。");
         using var request = new HttpRequestMessage(HttpMethod.Post, Endpoint(configuration.BaseUrl, configuration.UsesMiMo ? "chat/completions" : "audio/transcriptions"));
         Authenticate(request, configuration.Token);
         if (configuration.UsesMiMo)
         {
-            var payload = new { model = configuration.AsrModel, messages = new[] { new { role = "user", content = new[] { new { type = "input_audio", input_audio = new { data = "data:audio/wav;base64," + Convert.ToBase64String(wav) } } } } }, asr_options = new { language = NormalizeLanguage(configuration.Language) }, stream = false };
+            var payload = new { model = configuration.AsrModel, messages = new[] { new { role = "user", content = new[] { new { type = "input_audio", input_audio = new { data = "data:audio/wav;base64," + Convert.ToBase64String(wav) } } } } }, asr_options = new { language = NormalizeLanguage(configuration.Language) }, stream = onPartial is not null };
             request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
         }
         else
@@ -37,7 +40,44 @@ public sealed class ModelClient
             multipart.Add(audio, "file", "speech.wav");
             request.Content = multipart;
         }
+        if (configuration.UsesMiMo && onPartial is not null)
+        {
+            try { return await PerformStreamingAsync(request, onPartial, cancellationToken); }
+            catch (HttpRequestException error) when (error.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.NotFound or HttpStatusCode.UnsupportedMediaType or HttpStatusCode.UnprocessableEntity or HttpStatusCode.NotImplemented)
+            {
+                // Compatible gateways may not implement streaming. Never retry
+                // 401/403/429 or dropped streams as a silent protocol downgrade.
+                return await TranscribeAsync(wav, configuration, cancellationToken);
+            }
+        }
         return await PerformAsync(request, configuration.Token, cancellationToken);
+    }
+    private async Task<string> PerformStreamingAsync(HttpRequestMessage request, Action<string> onPartial, CancellationToken token)
+    {
+        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+        if (!response.IsSuccessStatusCode) throw new HttpRequestException($"识别流请求失败（{(int)response.StatusCode}），请检查模型、权限或额度。", null, response.StatusCode);
+        if (!string.Equals(response.Content.Headers.ContentType?.MediaType, "text/event-stream", StringComparison.OrdinalIgnoreCase))
+        {
+            var text = ParseText(await response.Content.ReadAsStringAsync(token));
+            if (text.Length == 0) throw new InvalidDataException("识别服务未返回文字。");
+            onPartial(text); return text;
+        }
+        using var stream = await response.Content.ReadAsStreamAsync(token);
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+        var parser = new ASRStreamDecoder();
+        var watch = System.Diagnostics.Stopwatch.StartNew(); long last = -1000;
+        while (await reader.ReadLineAsync(token) is { } line)
+        {
+            token.ThrowIfCancellationRequested();
+            if (parser.Consume(line) is { Length: > 0 } text && watch.ElapsedMilliseconds - last >= 60)
+            {
+                onPartial(text); last = watch.ElapsedMilliseconds;
+            }
+            if (parser.Completed) break;
+        }
+        if (!parser.Completed) throw new InvalidDataException("识别流意外中断，临时文字未定稿，可事后补全。");
+        if (parser.Text.Length == 0) throw new InvalidDataException("识别服务未返回文字。");
+        onPartial(parser.Text); return parser.Text;
     }
     public async Task<string> CompleteAsync(string system, string text, ModelConfiguration configuration, CancellationToken cancellationToken = default)
     {

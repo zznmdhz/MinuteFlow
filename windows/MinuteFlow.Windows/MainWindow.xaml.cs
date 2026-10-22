@@ -30,8 +30,8 @@ public partial class MainWindow : Window
     private Task? operationTask;
     private bool loading, titleCommitting, dirtyTranscript, dirtySummary, dirtyDocument, closing;
     private string originalTitle = "";
-    private string preview = "";
     private double lastFinalTime;
+    private readonly Dictionary<string, TranscriptSegment> livePreviews = new();
     private WaveOutEvent? playback;
     private AudioFileReader? playbackFile;
     private DateTimeOffset lastNotice;
@@ -104,13 +104,13 @@ public partial class MainWindow : Window
         DocumentEditor.Text = repository.LoadDocument(session.Id, "AI排版文稿.md") ?? "";
         TitleDisplay.Text = session.Title; TitleEditor.Visibility = Visibility.Collapsed; TitleDisplay.Visibility = Visibility.Visible;
         foreach (ComboBoxItem source in SourcePicker.Items) if (source.Tag as string == session.SourceSelection) SourcePicker.SelectedItem = source;
-        dirtyTranscript = dirtySummary = dirtyDocument = false; preview = ""; lastFinalTime = transcript.Select(s => s.EndTime).DefaultIfEmpty().Max(); loading = false;
+        dirtyTranscript = dirtySummary = dirtyDocument = false; livePreviews.Clear(); lastFinalTime = transcript.Select(s => s.EndTime).DefaultIfEmpty().Max(); loading = false;
         RenderTranscript(); RefreshStatus();
     }
     private void NewRecording(object sender, RoutedEventArgs e)
     {
         if (engine is not null || operation is not null) return;
-        FlushEdits(); CommitTitle(); StopPlaying(); current = null; transcript.Clear(); transcriptRows.Clear(); preview = ""; lastFinalTime = 0;
+        FlushEdits(); CommitTitle(); StopPlaying(); current = null; transcript.Clear(); transcriptRows.Clear(); livePreviews.Clear(); PreviewLabel.Text = ""; lastFinalTime = 0;
         loading = true; History.SelectedItem = null; SummaryEditor.Text = ""; DocumentEditor.Text = ""; loading = false;
         TitleDisplay.Text = "新录音"; TitleDisplay.Visibility = Visibility.Visible; TitleEditor.Visibility = Visibility.Collapsed;
         RenderTranscript(); RefreshStatus();
@@ -126,16 +126,29 @@ public partial class MainWindow : Window
         engine.Recognized += segment => Dispatcher.BeginInvoke(() =>
         {
             if (current?.Id != startedEngine.Session.Id) return;
-            if (!segment.IsFinal) { if (segment.EndTime > lastFinalTime) { preview = segment.Text; PreviewLabel.Text = "识别中：" + preview; } return; }
+            if (!segment.IsFinal)
+            {
+                var sourceFinal = transcript.Where(s => s.Source == segment.Source).Select(s => s.EndTime).DefaultIfEmpty().Max();
+                if (segment.EndTime > sourceFinal && (!livePreviews.TryGetValue(segment.Source, out var prior) || segment.EndTime >= prior.EndTime))
+                    livePreviews[segment.Source] = segment;
+                RenderLivePreview(); return;
+            }
             // Preserve user edits, never merge a new ASR response into edited text.
             TranscriptEditing.AppendOrMerge(transcript, segment);
-            lastFinalTime = Math.Max(lastFinalTime, segment.EndTime); preview = ""; PreviewLabel.Text = "";
+            lastFinalTime = Math.Max(lastFinalTime, segment.EndTime);
+            if (livePreviews.TryGetValue(segment.Source, out var draft) && draft.EndTime <= segment.EndTime) livePreviews.Remove(segment.Source);
+            RenderLivePreview();
             dirtyTranscript = true; ScheduleSave(); RenderTranscript();
         });
         engine.Notice += message => Dispatcher.BeginInvoke(() => Notice(message, true));
         try { engine.Start(); MicLabel.Text = current.MicrophoneAudioURL is null ? "麦克风 · 未启用" : "麦克风 · " + engine.Recorder.MicrophoneName; foreach (ComboBoxItem source in SourcePicker.Items) if (source.Tag as string == current.SourceSelection) SourcePicker.SelectedItem = source; ReloadHistory(); Notice("录音已开始。原始音轨持续保存，AI 失败也不会中断录音。"); }
         catch (Exception error) { await engine.DisposeAsync(); engine = null; current.RecordingStatus = "failed"; current.UpdatedAt = DateTimeOffset.Now; repository.Save(current); ReloadHistory(); Notice("无法开始录音：" + error.Message + "。请在设置检测音频设备及麦克风权限。"); }
         RefreshStatus();
+    }
+    private void RenderLivePreview()
+    {
+        PreviewLabel.Text = string.Join("\n", livePreviews.Values.OrderBy(s => s.StartTime)
+            .Select(s => (s.Source == "microphone" ? "麦克风" : "系统声音") + " · 识别中：" + s.Text));
     }
     private void PauseRecording(object sender, RoutedEventArgs e)
     {

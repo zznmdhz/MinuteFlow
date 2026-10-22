@@ -16,7 +16,7 @@ final class RemoteRealtimeTranscriptionService: @unchecked Sendable {
     private let minimumChunkDuration: TimeInterval = 0.8
     private let silenceToFlush: TimeInterval = 0.7
     private let silentWriterRotation: TimeInterval = 3
-    private let previewDelay: TimeInterval = 3
+    private let previewDelay: TimeInterval = 1.2
     private let continuationOverlap: TimeInterval = 0.45
     /// A transport hard cut may continue one utterance, but a display paragraph
     /// is never allowed to grow for an entire meeting when VAD is uncertain.
@@ -29,6 +29,8 @@ final class RemoteRealtimeTranscriptionService: @unchecked Sendable {
     private var pendingUploads: [UploadJob] = []
     private var activeUploads: [UUID: Task<Void, Never>] = [:]
     private var activeUploadKinds: [UUID: UploadKind] = [:]
+    private var activePreviewSources: [UUID: TranscriptSource] = [:]
+    private var displayedPreviewEnds: [UUID: TimeInterval] = [:]
     // At most one preview per source is produced, so a third slot always leaves
     // capacity for a final result from either source.
     private let maximumConcurrentUploads = 3
@@ -69,6 +71,7 @@ final class RemoteRealtimeTranscriptionService: @unchecked Sendable {
             resultsLock.withLock { completedSegments = [] }
             recognitionGroups = [:]
             finalizedGroupIDs = []
+            displayedPreviewEnds = [:]
             pendingUploads = []
             currentGeneration = UUID()
             for source in sources {
@@ -106,6 +109,7 @@ final class RemoteRealtimeTranscriptionService: @unchecked Sendable {
             activeUploads.values.forEach { $0.cancel() }
             activeUploads.removeAll()
             activeUploadKinds.removeAll()
+            activePreviewSources.removeAll()
             for accumulator in accumulators.values {
                 accumulator.removeUnusedWriters()
             }
@@ -132,12 +136,6 @@ final class RemoteRealtimeTranscriptionService: @unchecked Sendable {
                 let reachedMaximum = accumulator.hasSpeech
                     && accumulator.activeDuration >= self.maximumChunkDuration
 
-                if accumulator.hasSpeech,
-                   accumulator.activeDuration >= self.previewDelay,
-                   !accumulator.previewSubmitted {
-                    try self.submitPreview(accumulator)
-                }
-
                 if shouldFlushForSilence {
                     try self.flush(accumulator, boundaryReason: .naturalPause, isTerminal: true)
                 } else if reachedMaximum {
@@ -149,6 +147,9 @@ final class RemoteRealtimeTranscriptionService: @unchecked Sendable {
                     try self.flush(accumulator, boundaryReason: reason, isTerminal: closesParagraph)
                 } else if !accumulator.hasSpeech && accumulator.writer.duration >= self.silentWriterRotation {
                     try self.discardSilentChunk(accumulator)
+                } else if accumulator.hasSpeech,
+                          accumulator.activeDuration >= max(self.previewDelay, accumulator.nextPreviewAt) {
+                    try self.submitPreview(accumulator)
                 }
             } catch {
                 self.onError?(error)
@@ -206,7 +207,7 @@ final class RemoteRealtimeTranscriptionService: @unchecked Sendable {
     }
 
     private func submitPreview(_ accumulator: ChunkAccumulator) throws {
-        guard let configuration, let previewWriter = accumulator.takePreviewWriter() else { return }
+        guard let configuration, let previewWriter = try accumulator.takePreviewWriter() else { return }
         let duration = previewWriter.duration
         previewWriter.close()
         guard duration > 0.25 else {
@@ -223,12 +224,17 @@ final class RemoteRealtimeTranscriptionService: @unchecked Sendable {
             source: accumulator.source,
             configuration: configuration,
             utteranceGroupID: accumulator.utteranceGroupID,
-            sequence: -1,
+            sequence: accumulator.sequence,
             boundaryReason: .legacyUnknown,
-            overlapBefore: 0,
+            overlapBefore: accumulator.overlapBefore,
             isTerminal: false,
             kind: .preview
         )
+        // Drop obsolete queued previews, never final audio. At most one active
+        // and one latest pending preview exist per source.
+        let stale = pendingUploads.filter { $0.kind == .preview && $0.source == job.source }
+        pendingUploads.removeAll { $0.kind == .preview && $0.source == job.source }
+        stale.forEach { try? FileManager.default.removeItem(at: $0.url) }
         guard pendingUploads.count < maximumPendingUploads else {
             try? FileManager.default.removeItem(at: job.url)
             return
@@ -255,11 +261,12 @@ final class RemoteRealtimeTranscriptionService: @unchecked Sendable {
         let endTime = startTime + duration
 
         let nextWriter = try WAVChunkWriter(directory: Self.temporaryDirectory())
-        let nextPreviewWriter = isTerminal ? try WAVChunkWriter(directory: Self.temporaryDirectory()) : nil
+        let nextPreviewWriter = try WAVChunkWriter(directory: Self.temporaryDirectory(), retainSnapshot: true)
         var overlapBefore: TimeInterval = 0
         if !isTerminal,
            let overlapBuffer = try WAVChunkWriter.readTail(from: oldWriter.url, duration: continuationOverlap) {
             try nextWriter.append(overlapBuffer)
+            try nextPreviewWriter.append(overlapBuffer)
             overlapBefore = nextWriter.duration
         }
         accumulator.advance(
@@ -311,13 +318,16 @@ final class RemoteRealtimeTranscriptionService: @unchecked Sendable {
         accumulator.writer.close()
         try? FileManager.default.removeItem(at: oldURL)
         let nextWriter = try WAVChunkWriter(directory: Self.temporaryDirectory())
-        let nextPreviewWriter = try WAVChunkWriter(directory: Self.temporaryDirectory())
+        let nextPreviewWriter = try WAVChunkWriter(directory: Self.temporaryDirectory(), retainSnapshot: true)
         accumulator.discardAndAdvance(to: nextWriter, previewWriter: nextPreviewWriter, duration: duration)
     }
 
     private func pumpUploads() {
         while activeUploads.count < maximumConcurrentUploads, !pendingUploads.isEmpty {
-            let job = pendingUploads.removeFirst()
+            guard let index = pendingUploads.firstIndex(where: {
+                $0.kind == .final || !activePreviewSources.values.contains($0.source)
+            }) else { break }
+            let job = pendingUploads.remove(at: index)
             let task = Task { [weak self] in
                 guard let self else { return }
                 let result: Result<String, Error>
@@ -332,6 +342,7 @@ final class RemoteRealtimeTranscriptionService: @unchecked Sendable {
             }
             activeUploads[job.id] = task
             activeUploadKinds[job.id] = job.kind
+            if job.kind == .preview { activePreviewSources[job.id] = job.source }
         }
         let backlog = pendingUploads.count + activeUploads.count
         if backlog > maximumConcurrentUploads {
@@ -343,10 +354,12 @@ final class RemoteRealtimeTranscriptionService: @unchecked Sendable {
         var lastError: Error?
         for attempt in 0..<3 {
             do {
-                return try await client.transcribe(wavURL: job.url, configuration: job.configuration)
+                return try await client.transcribe(wavURL: job.url, configuration: job.configuration) { [weak self] text in
+                    self?.queue.async { [weak self] in self?.publishPartial(job, text: text) }
+                }
             } catch {
                 lastError = error
-                guard attempt < 2, Self.isRetryable(error) else { throw error }
+                guard job.kind == .final, attempt < 2, Self.isRetryable(error) else { throw error }
                 let delay = UInt64(500 * (1 << attempt)) * 1_000_000
                 try await Task.sleep(nanoseconds: delay)
             }
@@ -357,6 +370,7 @@ final class RemoteRealtimeTranscriptionService: @unchecked Sendable {
     private func completeUpload(_ job: UploadJob, result: Result<String, Error>) {
         activeUploads[job.id] = nil
         activeUploadKinds[job.id] = nil
+        activePreviewSources[job.id] = nil
         guard job.generation == currentGeneration else {
             if job.kind == .preview {
                 try? FileManager.default.removeItem(at: job.url)
@@ -373,6 +387,7 @@ final class RemoteRealtimeTranscriptionService: @unchecked Sendable {
         switch result {
         case .success(let text):
             try? FileManager.default.removeItem(at: job.url)
+            publishPartial(job, text: text, requiresActive: false)
             markJobComplete(job, result: .success(text))
             onStatus?("已识别至 \(Int(job.startTime + job.duration)) 秒，等待下一段…")
         case .failure(let error):
@@ -391,17 +406,36 @@ final class RemoteRealtimeTranscriptionService: @unchecked Sendable {
             onStatus?("临时预览暂不可用；最终转写仍在继续")
             return
         }
+        guard running else { return }
+        publishPartial(job, text: text, requiresActive: false)
+    }
+
+    private func publishPartial(_ job: UploadJob, text: String, requiresActive: Bool = true) {
+        guard job.generation == currentGeneration,
+              (job.kind == .final || running),
+              (!requiresActive || activeUploads[job.id] != nil),
+              !finalizedGroupIDs.contains(job.utteranceGroupID), !text.isEmpty else { return }
+        let end = job.startTime + job.duration
+        guard end >= (displayedPreviewEnds[job.utteranceGroupID] ?? 0) else { return }
+        displayedPreviewEnds[job.utteranceGroupID] = end
+        // Earlier hard-cut results remain visible when the next window grows.
+        var units = recognitionGroups[job.utteranceGroupID]?.results
+            .filter { $0.key < job.sequence }.map(\.value) ?? []
+        units.append(RecognitionResult(id: job.id, startTime: job.startTime, endTime: end,
+                                      rawText: text, boundaryReason: job.boundaryReason, overlapBefore: job.overlapBefore))
+        units.sort { $0.startTime < $1.startTime }
+        let assembled = TranscriptTextAssembler.assemble(units)
         let preview = TranscriptSegment(
             id: job.utteranceGroupID,
-            startTime: job.startTime,
-            endTime: job.startTime + job.duration,
-            text: text,
+            startTime: units.first?.startTime ?? job.startTime,
+            endTime: end,
+            text: assembled,
             source: job.source,
             isFinal: false,
-            originalText: text
+            originalText: assembled
         )
         onPreview?(preview)
-        onStatus?("临时预览已显示，等待停顿后定稿…")
+        onStatus?("文字正在更新 · 停顿后定稿")
     }
 
     private func markJobComplete(_ job: UploadJob, result: Result<String, Error>) {
@@ -430,6 +464,7 @@ final class RemoteRealtimeTranscriptionService: @unchecked Sendable {
         guard expected.isSubset(of: completed) else { return }
         recognitionGroups[groupID] = nil
         finalizedGroupIDs.insert(groupID)
+        displayedPreviewEnds[groupID] = nil
 
         let units = group.results.values.sorted {
             if $0.startTime == $1.startTime { return $0.id.uuidString < $1.id.uuidString }
@@ -600,7 +635,7 @@ private final class ChunkAccumulator: @unchecked Sendable {
     var utteranceGroupID = UUID()
     var sequence = 0
     var overlapBefore: TimeInterval = 0
-    var previewSubmitted = false
+    var nextPreviewAt: TimeInterval = 1.2
 
     var activeDuration: TimeInterval {
         guard let speechStartedAtWriterDuration else { return 0 }
@@ -620,7 +655,7 @@ private final class ChunkAccumulator: @unchecked Sendable {
         self.sessionID = sessionID
         self.source = source
         writer = try WAVChunkWriter(directory: directory)
-        previewWriter = try WAVChunkWriter(directory: directory)
+        previewWriter = try WAVChunkWriter(directory: directory, retainSnapshot: true)
         writerStartTime = timelineOffset
         groupStartTime = timelineOffset
     }
@@ -630,12 +665,9 @@ private final class ChunkAccumulator: @unchecked Sendable {
         try previewWriter?.append(buffer)
     }
 
-    func takePreviewWriter() -> WAVChunkWriter? {
-        defer {
-            previewWriter = nil
-            previewSubmitted = true
-        }
-        return previewWriter
+    func takePreviewWriter() throws -> WAVChunkWriter? {
+        nextPreviewAt = activeDuration + 1.5
+        return try previewWriter?.snapshot()
     }
 
     func discardPreviewWriter() {
@@ -673,12 +705,12 @@ private final class ChunkAccumulator: @unchecked Sendable {
         speechStartedAtWriterDuration = continuingGroup ? 0 : nil
         hasSpeech = continuingGroup
         voiceActivity.reset(continuingSpeech: continuingGroup)
+        nextPreviewAt = 1.2
         if continuingGroup {
             sequence += 1
         } else {
             utteranceGroupID = UUID()
             sequence = 0
-            previewSubmitted = false
             groupStartTime = nextStartTime
         }
     }
@@ -698,7 +730,7 @@ private final class ChunkAccumulator: @unchecked Sendable {
         groupStartTime = writerStartTime
         voiceActivity.reset(continuingSpeech: false)
         overlapBefore = 0
-        previewSubmitted = false
+        nextPreviewAt = 1.2
     }
 
     func removeUnusedWriters() {

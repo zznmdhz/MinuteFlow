@@ -74,7 +74,7 @@ public sealed class SpeechSegmenter
                     continue;
                 }
                 start = Math.Max(0, currentTime - (double)preRoll.Count / sampleRate);
-                samples.AddRange(preRoll); preRoll.Clear(); previewAt = 3; silence = 0; overlapBefore = 0;
+                samples.AddRange(preRoll); preRoll.Clear(); previewAt = 1.2; silence = 0; overlapBefore = 0;
             }
             foreach (var sample in block) samples.Add(sample);
             silence = speaking ? 0 : silence + (double)count / sampleRate;
@@ -83,12 +83,12 @@ public sealed class SpeechSegmenter
             {
                 if (duration >= 0.35) output.Add(new SpeechChunk(samples.ToArray(), rate, start, start + duration, false, silence >= 0.7 ? "naturalPause" : "forcedHardLimit", overlapBefore));
                 var overlap = silence < 0.7 ? samples.TakeLast((int)(rate * 0.45)).ToArray() : [];
-                samples.Clear(); samples.AddRange(overlap); start = currentTime + (double)count / sampleRate - (double)overlap.Length / rate; overlapBefore = (double)overlap.Length / rate; silence = 0; previewAt = 3;
+                samples.Clear(); samples.AddRange(overlap); start = currentTime + (double)count / sampleRate - (double)overlap.Length / rate; overlapBefore = (double)overlap.Length / rate; silence = 0; previewAt = 1.2;
             }
             else if (duration >= previewAt)
             {
                 output.Add(new SpeechChunk(samples.ToArray(), rate, start, start + duration, true));
-                previewAt += 3;
+                previewAt += 1.5;
             }
         }
         if (flush && samples.Count > 0)

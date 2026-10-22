@@ -135,7 +135,7 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
                     }
-                    Text("连续讲话约 3 秒先显示一次临时预览，约 0.7 秒自然停顿后定稿；安全上限只保护超长讲话，不再按固定 3 秒切断。")
+                    Text("约 1.2 秒开始请求预览，连续讲话每约 1.5 秒刷新音频窗口；MiMo 支持时逐步返回文字，停顿约 0.7 秒后整句定稿。实际延迟受网络与模型影响；预览刷新会增加音频调用量。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

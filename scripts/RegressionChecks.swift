@@ -178,6 +178,7 @@ struct RegressionChecks {
         check(repository.sessionDirectory(for: session.id).lastPathComponent == "退出保存测试",
               "quit flush persists pending meeting rename")
         withExtendedLifetime(observation) {}
+        checks += try await IncrementalTranscriptionChecks.run()
         print("\(checks) regression checks passed; no real audio, credentials, or cloud APIs used.")
     }
 }

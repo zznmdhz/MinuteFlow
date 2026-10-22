@@ -9,8 +9,11 @@ final class WAVChunkWriter: @unchecked Sendable {
     private var file: AVAudioFile?
     private var converter: AVAudioConverter?
     private var inputFormat: AVAudioFormat?
+    private let retainSnapshot: Bool
+    private var snapshotSamples: [Float] = []
 
-    init(directory: URL) throws {
+    init(directory: URL, retainSnapshot: Bool = false) throws {
+        self.retainSnapshot = retainSnapshot
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         url = directory.appending(path: "\(UUID().uuidString).wav")
         let settings: [String: Any] = [
@@ -70,7 +73,26 @@ final class WAVChunkWriter: @unchecked Sendable {
         if converted.frameLength > 0 {
             try file.write(from: converted)
             frameCount += AVAudioFramePosition(converted.frameLength)
+            if retainSnapshot, let channel = converted.floatChannelData?[0] {
+                snapshotSamples.append(contentsOf: UnsafeBufferPointer(start: channel, count: Int(converted.frameLength)))
+            }
         }
+    }
+
+    func snapshot() throws -> WAVChunkWriter {
+        let copy = try WAVChunkWriter(directory: url.deletingLastPathComponent())
+        guard !snapshotSamples.isEmpty,
+              let format = AVAudioFormat(standardFormatWithSampleRate: Self.sampleRate, channels: 1),
+              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(snapshotSamples.count)) else {
+            return copy
+        }
+        buffer.frameLength = buffer.frameCapacity
+        snapshotSamples.withUnsafeBufferPointer { samples in
+            buffer.floatChannelData![0].update(from: samples.baseAddress!, count: samples.count)
+        }
+        try copy.append(buffer)
+        copy.close()
+        return copy
     }
 
     func close() {

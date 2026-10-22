@@ -360,6 +360,54 @@ Check("MiMo detection rejects look-alike host names; malformed service URLs fail
     Equal("https://models.example.com/v1/chat/completions", ModelClient.Endpoint("https://models.example.com/v1/audio/transcriptions/", "chat/completions").ToString());
 });
 
+Check("SSE deltas grow one draft and finish only on explicit completion", () =>
+{
+    var parser = new ASRStreamDecoder();
+    parser.Consume("data: {\"choices\":[{\"delta\":{\"content\":\"我\"}}]}");
+    Equal("我", parser.Consume("")); True(!parser.Completed, "Partial delta must not be final.");
+    parser.Consume("data: {\"choices\":[{\"delta\":{\"content\":\"们开会。\"}}]}"); parser.Consume("");
+    parser.Consume("data: [DONE]"); parser.Consume("");
+    Equal("我们开会。", parser.Text); True(parser.Completed, "Explicit completion expected.");
+});
+AsyncCheck("MiMo live request emits incremental text and keeps existing authentication", async () =>
+{
+    using var http = new HttpClient(new Handler(async (request, token) =>
+    {
+        using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
+        True(body.RootElement.GetProperty("stream").GetBoolean(), "Live recognition must request streaming.");
+        Equal("synthetic-token", request.Headers.GetValues("api-key").Single());
+        return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("data: {\"choices\":[{\"delta\":{\"content\":\"我\"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"们开会。\"}}]}\n\ndata: [DONE]\n\n", Encoding.UTF8, "text/event-stream") };
+    }));
+    var partials = new List<string>();
+    var result = await new ModelClient(http).TranscribeLiveAsync([0], Configuration("https://api.xiaomimimo.com/v1"), partials.Add);
+    Equal("我们开会。", result); Equal("我", partials.First()); Equal(result, partials.Last());
+});
+AsyncCheck("Dropped stream never silently commits the partial sentence", async () =>
+{
+    using var http = new HttpClient(new Handler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("data: {\"choices\":[{\"delta\":{\"content\":\"半句话\"}}]}\n\n", Encoding.UTF8, "text/event-stream") })));
+    var failed = false;
+    try { await new ModelClient(http).TranscribeLiveAsync([0], Configuration("https://api.xiaomimimo.com/v1"), _ => { }); }
+    catch (InvalidDataException) { failed = true; }
+    True(failed, "Dropped SSE must remain incomplete.");
+});
+AsyncCheck("Preview queue keeps only newest draft and gives final audio priority", async () =>
+{
+    var queue = new LiveRecognitionQueue();
+    SpeechChunk Chunk(double end, bool preview) => new([], 16000, 0, end, preview);
+    queue.Enqueue(new("microphone", Chunk(1.2, true)));
+    var active = (await queue.TakeAsync(default))!;
+    queue.Enqueue(new("microphone", Chunk(2.7, true)));
+    queue.Enqueue(new("microphone", Chunk(4.2, true)));
+    queue.Enqueue(new("system", Chunk(1.3, false)));
+    var final = (await queue.TakeAsync(default))!;
+    True(!final.Chunk.IsPreview, "Final audio must not wait behind previews.");
+    queue.Finished(active);
+    var latest = (await queue.TakeAsync(default))!;
+    Equal(4.2, latest.Chunk.EndTime);
+    queue.Complete(); queue.Finished(latest); queue.Finished(final);
+    True(await queue.TakeAsync(default) is null, "Completion discards drafts and drains finals.");
+});
+
 #if WINDOWS_VALIDATION
 foreach (var check in WindowsBehaviorChecks.Create()) checks.Add(check);
 #else

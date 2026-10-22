@@ -10,7 +10,9 @@ public sealed class RecordingEngine : IAsyncDisposable
     private readonly MeetingRepository repository;
     private readonly SettingsStore settings;
     private readonly ModelClient client;
-    private readonly Channel<(string Source, SpeechChunk Chunk, string? PendingPath)> queue = Channel.CreateBounded<(string, SpeechChunk, string?)>(new BoundedChannelOptions(48) { FullMode = BoundedChannelFullMode.Wait, SingleReader = true });
+    private readonly LiveRecognitionQueue queue = new();
+    private readonly Dictionary<string, double> latestPartialEnd = new();
+    private readonly Dictionary<string, double> finalizedEnd = new();
     private readonly CancellationTokenSource cancellation = new();
     private readonly Dictionary<string, SpeechSegmenter> segmenters = new() { ["system"] = new(), ["microphone"] = new() };
     private readonly Dictionary<string, SpeakerClusterer> speakers = new() { ["system"] = new(), ["microphone"] = new() };
@@ -40,7 +42,7 @@ public sealed class RecordingEngine : IAsyncDisposable
         Recorder.Faulted += message => Notice?.Invoke(message + "。请暂停录音后检查设备；原录音仍保留。");
         Recorder.AllSourcesInterrupted += message => { lock (processingGate) { IsPaused = true; Session.Duration = Recorder.Elapsed; Session.RecordingStatus = "paused"; try { repository.Save(Session); } catch { } } Notice?.Invoke(message); };
         settings.Changed += ConfigurationChanged;
-        worker = Task.Run(ProcessQueueAsync);
+        worker = Task.WhenAll(Enumerable.Range(0, 3).Select(_ => Task.Run(ProcessQueueAsync)));
         silenceFinalizer = new System.Threading.Timer(_ =>
         {
             lock (processingGate)
@@ -76,37 +78,53 @@ public sealed class RecordingEngine : IAsyncDisposable
     private void Enqueue(string source, SpeechChunk chunk)
     {
         if (!settings.Configuration.AsrEnabled) return;
-        if (chunk.IsPreview && queue.Reader.Count > 3) return;
-        if (!queue.Writer.TryWrite((source, chunk, null)) && !chunk.IsPreview) Notice?.Invoke("识别服务较慢，完整录音已保留；结束后可补全逐字稿。");
+        if (!queue.Enqueue(new(source, chunk)) && !chunk.IsPreview) Notice?.Invoke("识别服务较慢，完整录音已保留；结束后可补全逐字稿。");
     }
     private async Task ProcessQueueAsync()
     {
         try
         {
-            await foreach (var item in queue.Reader.ReadAllAsync(cancellation.Token))
+            while (await queue.TakeAsync(cancellation.Token) is { } item)
             {
+                try {
                 var configuration = settings.Configuration;
                 if (!configuration.AsrEnabled) continue;
                 if (!configuration.IsConfigured) { if (!item.Chunk.IsPreview) Notice?.Invoke("录音正常保存，AI 配置未就绪；保存配置后会自动开始识别，遗漏内容可事后补全。"); continue; }
                 try
                 {
                     var wav = WavePcm.Encode16Bit(item.Chunk.Samples, item.Chunk.SampleRate);
-                    var text = await client.TranscribeAsync(wav, configuration, cancellation.Token);
+                    var text = await client.TranscribeLiveAsync(wav, configuration, text =>
+                    {
+                        lock (processingGate)
+                        {
+                            if (cancellation.IsCancellationRequested || (stopping && item.Chunk.IsPreview) ||
+                                item.Chunk.EndTime <= finalizedEnd.GetValueOrDefault(item.Source) ||
+                                item.Chunk.EndTime < latestPartialEnd.GetValueOrDefault(item.Source)) return;
+                            latestPartialEnd[item.Source] = item.Chunk.EndTime;
+                            Recognized?.Invoke(new TranscriptSegment { StartTime = item.Chunk.StartTime, EndTime = item.Chunk.EndTime,
+                                Text = text, OriginalText = text, Source = item.Source, IsFinal = false });
+                        }
+                    }, cancellation.Token);
                     if (string.IsNullOrWhiteSpace(text)) continue;
                     string? speaker = null;
                     if (!item.Chunk.IsPreview)
                     {
-                        speaker = speakers[item.Source].Analyze(item.Chunk.Samples, item.Chunk.SampleRate);
+                        lock (processingGate) speaker = speakers[item.Source].Analyze(item.Chunk.Samples, item.Chunk.SampleRate);
                         // Separate source-scoped clusters prevent incidental identical
                         // pitch from collapsing participants from different tracks.
                         if (item.Source == "system") speaker = "system-" + speaker;
                     }
                     var fragment = new TranscriptRecognitionFragment { StartTime = item.Chunk.StartTime, EndTime = item.Chunk.EndTime, OriginalText = text, BoundaryReason = item.Chunk.BoundaryReason, OverlapBefore = item.Chunk.OverlapBefore, SpeakerID = speaker };
-                    Recognized?.Invoke(new TranscriptSegment { StartTime = item.Chunk.StartTime, EndTime = item.Chunk.EndTime, Text = text, OriginalText = text, Source = item.Source, IsFinal = !item.Chunk.IsPreview, SpeakerID = speaker, BoundaryReason = item.Chunk.BoundaryReason, RecognitionFragments = item.Chunk.IsPreview ? null : [fragment] });
-                    if (item.PendingPath is not null) File.Delete(item.PendingPath);
+                    lock (processingGate)
+                    {
+                        if (!item.Chunk.IsPreview) finalizedEnd[item.Source] = Math.Max(finalizedEnd.GetValueOrDefault(item.Source), item.Chunk.EndTime);
+                        if (!item.Chunk.IsPreview || (!stopping && item.Chunk.EndTime > finalizedEnd.GetValueOrDefault(item.Source) && item.Chunk.EndTime >= latestPartialEnd.GetValueOrDefault(item.Source)))
+                            Recognized?.Invoke(new TranscriptSegment { StartTime = item.Chunk.StartTime, EndTime = item.Chunk.EndTime, Text = text, OriginalText = text, Source = item.Source, IsFinal = !item.Chunk.IsPreview, SpeakerID = speaker, BoundaryReason = item.Chunk.BoundaryReason, RecognitionFragments = item.Chunk.IsPreview ? null : [fragment] });
+                    }
                 }
                 catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { break; }
-                catch (Exception e) { Notice?.Invoke("实时转写暂不可用：" + SafeError(e, configuration.Token) + "。录音继续保存，可更正配置或事后补全。"); }
+                catch (Exception e) { if (!item.Chunk.IsPreview) Notice?.Invoke("实时转写暂不可用：" + SafeError(e, configuration.Token) + "。录音继续保存，可更正配置或事后补全。"); }
+                } finally { queue.Finished(item); }
             }
         }
         catch (OperationCanceledException) { }
@@ -137,7 +155,7 @@ public sealed class RecordingEngine : IAsyncDisposable
             stopping = true;
             foreach (var (source, segmenter) in segmenters) foreach (var chunk in segmenter.Push([], AudioRecorder.SampleRate, Recorder.Elapsed, true)) Enqueue(source, chunk);
         }
-        queue.Writer.TryComplete();
+        queue.Complete();
         // Complete recent requests, but never make the Stop button wait for a
         // lengthy remote backlog. Durable source audio enables later backfill.
         if (await Task.WhenAny(worker, Task.Delay(TimeSpan.FromSeconds(12))) != worker) cancellation.Cancel();
@@ -152,7 +170,7 @@ public sealed class RecordingEngine : IAsyncDisposable
     }
     public async ValueTask DisposeAsync()
     {
-        silenceFinalizer.Dispose(); settings.Changed -= ConfigurationChanged; cancellation.Cancel(); queue.Writer.TryComplete(); Recorder.Dispose();
+        silenceFinalizer.Dispose(); settings.Changed -= ConfigurationChanged; cancellation.Cancel(); queue.Complete(); Recorder.Dispose();
         await worker; cancellation.Dispose();
     }
     public static string SafeError(Exception error, string token) => string.IsNullOrEmpty(token) ? error.Message : error.Message.Replace(token, "[Token]");

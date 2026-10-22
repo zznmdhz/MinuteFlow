@@ -1179,8 +1179,8 @@ final class RecordingCoordinator: ObservableObject {
                     self.transcriptSegments[index] = preview
                 } else {
                     self.transcriptSegments.append(preview)
+                    self.transcriptSegments.sort { $0.startTime < $1.startTime }
                 }
-                self.transcriptSegments.sort { $0.startTime < $1.startTime }
             }
         }
         transcriptionService.onStatus = { [weak self] activity in

@@ -38,6 +38,15 @@ enum RemoteModelError: LocalizedError, Sendable {
 
 protocol ASRClient: Sendable {
     func transcribe(wavURL: URL, configuration: ASRConfiguration) async throws -> String
+    func transcribe(wavURL: URL, configuration: ASRConfiguration,
+                    onPartial: @escaping @Sendable (String) -> Void) async throws -> String
+}
+
+extension ASRClient {
+    func transcribe(wavURL: URL, configuration: ASRConfiguration,
+                    onPartial: @escaping @Sendable (String) -> Void) async throws -> String {
+        try await transcribe(wavURL: wavURL, configuration: configuration)
+    }
 }
 
 struct RemoteASRClient: ASRClient, Sendable {
@@ -55,9 +64,24 @@ struct RemoteASRClient: ASRClient, Sendable {
         }
     }
 
+    func transcribe(wavURL: URL, configuration: ASRConfiguration,
+                    onPartial: @escaping @Sendable (String) -> Void) async throws -> String {
+        guard configuration.transport == .miMoChatAudio else {
+            return try await transcribe(wavURL: wavURL, configuration: configuration)
+        }
+        do {
+            return try await transcribeWithMiMo(wavURL: wavURL, configuration: configuration, onPartial: onPartial)
+        } catch RemoteModelError.server(let status, _) where [400, 404, 415, 422, 501].contains(status) {
+            // Some compatible gateways reject stream=true. Do not downgrade
+            // authentication, quota, network or incomplete-stream failures.
+            return try await transcribe(wavURL: wavURL, configuration: configuration)
+        }
+    }
+
     private func transcribeWithMiMo(
         wavURL: URL,
-        configuration: ASRConfiguration
+        configuration: ASRConfiguration,
+        onPartial: (@Sendable (String) -> Void)? = nil
     ) async throws -> String {
         let audioData = try Data(contentsOf: wavURL)
         let language = Self.normalizedLanguage(configuration.language)
@@ -73,7 +97,7 @@ struct RemoteASRClient: ASRClient, Sendable {
                 ]]
             ]],
             "asr_options": ["language": language],
-            "stream": false
+            "stream": onPartial != nil
         ]
 
         var request = URLRequest(url: configuration.endpoint)
@@ -82,7 +106,57 @@ struct RemoteASRClient: ASRClient, Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         APIRequestAuthentication.apply(apiKey: configuration.apiKey, endpoint: configuration.endpoint, to: &request)
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        if let onPartial { return try await performStreaming(request, onPartial: onPartial) }
         return try await perform(request)
+    }
+
+    private func performStreaming(_ request: URLRequest,
+                                  onPartial: @escaping @Sendable (String) -> Void) async throws -> String {
+        let (bytes, response) = try await session.bytes(for: request)
+        guard let http = response as? HTTPURLResponse else { throw RemoteModelError.invalidResponse }
+        guard (200..<300).contains(http.statusCode) else {
+            // Never surface an untrusted response body containing credentials.
+            throw RemoteModelError.server(status: http.statusCode, message: "")
+        }
+        let isSSE = http.value(forHTTPHeaderField: "Content-Type")?.lowercased().contains("text/event-stream") == true
+        var parser = ASRStreamDecoder()
+        var received = Data()
+        var lastEmission = ContinuousClock.now.advanced(by: .seconds(-1))
+        for try await byte in bytes {
+            try Task.checkCancellation()
+            if !isSSE {
+                received.append(byte)
+                guard received.count <= 2_000_000 else { throw RemoteModelError.invalidResponse }
+                continue
+            }
+            if byte != 10 {
+                received.append(byte)
+                guard received.count <= 1_000_000 else { throw RemoteModelError.invalidResponse }
+                continue
+            }
+            if received.last == 13 { received.removeLast() }
+            guard let line = String(data: received, encoding: .utf8) else { throw RemoteModelError.invalidResponse }
+            received.removeAll(keepingCapacity: true)
+            if let text = try parser.consume(line), !text.isEmpty,
+               lastEmission.duration(to: .now) >= .milliseconds(60) {
+                onPartial(ASRTextSanitizer.clean(text))
+                lastEmission = .now
+            }
+            if parser.completed { break }
+        }
+        if !isSSE {
+            let decoded = try JSONDecoder().decode(ModelTextResponse.self, from: received)
+            let text = ASRTextSanitizer.clean(decoded.text ?? decoded.choices?.first?.message.content ?? "")
+            guard !text.isEmpty else { throw RemoteModelError.emptyResult }
+            onPartial(text)
+            return text
+        }
+        // A dropped connection must not turn a partial sentence into a final.
+        guard parser.completed else { throw RemoteModelError.invalidResponse }
+        let text = ASRTextSanitizer.clean(parser.text)
+        guard !text.isEmpty else { throw RemoteModelError.emptyResult }
+        onPartial(text)
+        return text
     }
 
     private func transcribeMultipart(

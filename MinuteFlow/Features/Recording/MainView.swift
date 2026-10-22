@@ -784,7 +784,7 @@ private struct TranscriptPanel: View {
 
     private var emptyTranscriptMessage: String {
         guard coordinator.status.isActive else { return "当前会议还没有逐字稿" }
-        return "连续讲话约 3 秒先显示临时文字；停顿后自动定稿并按内容分段"
+        return "约 1.2 秒开始请求预览，识别文字持续更新；停顿后整句定稿（延迟受网络与模型影响）"
     }
 
     private func speakerColor(_ speakerID: String) -> Color {
